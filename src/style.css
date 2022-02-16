@@ -1,0 +1,74 @@
+body{
+    background-color: #282c34;
+}
+form li{
+    list-style-type: none;
+}
+h2{
+    margin-bottom: 0;
+}
+.Card{
+    height: auto;
+    max-width: 240px;
+    border: 3px;
+    border-color:grey;
+    color: grey;
+    border-style: solid;
+    border-radius: 6px;
+    margin-bottom: 6px;
+}
+.taskCard_title{
+    font-family:monospace;
+}
+.taskCard form{
+    text-transform: capitalize;
+}
+.lane{
+    height: 90vh;
+    max-width: 360px;
+    min-width: 234px;
+    border: 3px;
+    padding-inline: 6px;
+    border-color: black;
+    background-color: white;
+    border-style: solid;
+    border-radius: 7px;
+}
+.lane_title{
+    color: #4d4d4d;
+    font:icon;
+    padding-left: 10px;
+    height: 72px;
+}
+
+.laneGroup .lane{
+    left: -120px;
+    float:left;
+    width:40px;
+}
+.laneGroup .lane{
+    left: 120px;
+    float:left;
+    width:40px;
+}
+.test{
+    height: 400px;
+}
+.inputFormError{
+    color: red;
+}
+#col_late{
+    background-color: tomato;
+}
+#col_automations{
+    background-color: rgba(147, 66, 252, 0.3);
+}
+#col_completed{
+    background-color: #81ca94;
+}
+#col_inProgress{
+    background-color: #408ce2;
+}
+#col_onHold{
+    background-color: #ddcd73;
+}
