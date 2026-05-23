@@ -1,9 +1,13 @@
 import React from 'react'
 import { Droppable } from 'react-beautiful-dnd'
 import TaskCard from './TaskCard'
+import AutomationCard from './AutomationCard'
 import NewTaskForm from './NewTaskForm'
 
-export default function Lane({ column, tasks, hasNewTaskForm, onAddTask, onDeleteTask, onDrillIn }) {
+export default function Lane({
+  column, tasks, liveStatuses,
+  onAddTask, onDeleteTask, onDrillIn,
+}) {
   return (
     <div id={column.id} className="lane">
       <div className="lane_title">
@@ -18,17 +22,25 @@ export default function Lane({ column, tasks, hasNewTaskForm, onAddTask, onDelet
             ref={provided.innerRef}
             {...provided.droppableProps}
           >
-            {tasks.map((task, index) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                index={index}
-                onDelete={() => onDeleteTask(task.id)}
-                onDrillIn={() => onDrillIn(task.id)}
-              />
-            ))}
+            {tasks.map((task, index) =>
+              column.isAutomation
+                ? <AutomationCard
+                    key={task.id}
+                    task={task}
+                    index={index}
+                    liveStatuses={liveStatuses}
+                    onDelete={() => onDeleteTask(task.id)}
+                  />
+                : <TaskCard
+                    key={task.id}
+                    task={task}
+                    index={index}
+                    onDelete={() => onDeleteTask(task.id)}
+                    onDrillIn={() => onDrillIn(task.id)}
+                  />
+            )}
             {provided.placeholder}
-            {hasNewTaskForm && <NewTaskForm onAdd={onAddTask} />}
+            {column.allowNewTasks && <NewTaskForm onAdd={onAddTask} />}
           </div>
         )}
       </Droppable>

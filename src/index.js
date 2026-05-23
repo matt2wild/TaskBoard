@@ -1,255 +1,168 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import ReactDOM from 'react-dom'
 import './style.css'
-import initialData from './data'
 import Board from './Board'
-import { log, warn, error } from './logger'
+import { log, warn, error as logError } from './logger'
+import * as api from './api'
 
-const STORAGE_KEY = 'taskboard_v2'
+// BoardPath persists navigation across refreshes but NOT board data
+const PATH_KEY = 'taskboard_boardpath'
 
-function loadState() {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved) {
-      const parsed = JSON.parse(saved)
-      log('State restored from localStorage', {
-        boards: Object.keys(parsed.boards),
-        tasks: Object.keys(parsed.tasks).length,
-        boardPath: parsed.boardPath,
-      })
-      return parsed
-    }
-  } catch (e) {
-    error('Failed to load state from localStorage, using initial data', e)
-  }
-  log('Using initial data (no saved state found)')
-  return initialData
+function loadPath() {
+  try { return JSON.parse(localStorage.getItem(PATH_KEY)) || ['root'] } catch { return ['root'] }
 }
-
-function saveState(state) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-  } catch (e) {
-    error('Failed to persist state to localStorage', e)
-  }
-}
-
-function makeEmptyBoard(id) {
-  return {
-    id,
-    columns: {
-      col_todo: { id: 'col_todo', title: 'To Do', tasks: [] },
-      col_inProgress: { id: 'col_inProgress', title: 'In Progress', tasks: [] },
-      col_completed: { id: 'col_completed', title: 'Done', tasks: [] },
-    },
-    columnOrder: ['col_todo', 'col_inProgress', 'col_completed'],
-    newTaskColumns: ['col_todo'],
-  }
+function savePath(p) {
+  try { localStorage.setItem(PATH_KEY, JSON.stringify(p)) } catch {}
 }
 
 function App() {
-  const [state, setState] = useState(loadState)
+  const [boardPath,    setBoardPath]    = useState(loadPath)
+  const [board,        setBoard]        = useState(null)
+  const [loading,      setLoading]      = useState(true)
+  const [fetchError,   setFetchError]   = useState(null)
+  const [liveStatuses, setLiveStatuses] = useState({})  // automationId → { status, result, lastRun }
+  const esRef = useRef(null)
 
-  const update = useCallback((updater) => {
-    setState((prev) => {
-      const next = updater(prev)
-      saveState(next)
-      return next
-    })
+  // ── Load current board ────────────────────────────────────────────────────
+  const currentBoardId = boardPath[boardPath.length - 1]
+
+  const fetchBoard = useCallback(async (boardId) => {
+    setLoading(true)
+    setFetchError(null)
+    try {
+      const data = await api.getBoard(boardId)
+      log('Loaded board', boardId, `(${data.columns.length} columns)`)
+      setBoard(data)
+    } catch (e) {
+      logError('Failed to load board', boardId, e.message)
+      setFetchError(e.message)
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
-  const moveTask = useCallback(
-    (boardId, source, destination) => {
-      if (
-        source.droppableId === destination.droppableId &&
-        source.index === destination.index
-      ) {
-        log('moveTask: dropped in same position, no-op')
-        return
-      }
+  useEffect(() => {
+    fetchBoard(currentBoardId)
+  }, [currentBoardId, fetchBoard])
 
-      log('moveTask', {
-        board: boardId,
-        from: `${source.droppableId}[${source.index}]`,
-        to: `${destination.droppableId}[${destination.index}]`,
-      })
+  // ── SSE — live automation status ──────────────────────────────────────────
+  useEffect(() => {
+    const es = new EventSource('/api/automations/stream')
+    esRef.current = es
 
-      update((prev) => {
-        const board = prev.boards[boardId]
-        if (!board) {
-          warn('moveTask: board not found', boardId)
-          return prev
-        }
-        const srcId = source.droppableId
-        const dstId = destination.droppableId
-        const srcTasks = [...board.columns[srcId].tasks]
-        const dstTasks = srcId === dstId ? srcTasks : [...(board.columns[dstId].tasks || [])]
+    es.addEventListener('snapshot', (e) => {
+      const autos = JSON.parse(e.data)
+      const map = {}
+      autos.forEach(a => { map[a.id] = a })
+      setLiveStatuses(map)
+      log('SSE snapshot received', Object.keys(map).length, 'automations')
+    })
 
-        const [moved] = srcTasks.splice(source.index, 1)
-        dstTasks.splice(destination.index, 0, moved)
-
-        return {
-          ...prev,
-          boards: {
-            ...prev.boards,
-            [boardId]: {
-              ...board,
-              columns: {
-                ...board.columns,
-                [srcId]: { ...board.columns[srcId], tasks: srcTasks },
-                [dstId]: { ...board.columns[dstId], tasks: dstTasks },
-              },
-            },
-          },
-        }
-      })
-    },
-    [update]
-  )
-
-  const addTask = useCallback(
-    (boardId, columnId, taskData) => {
-      update((prev) => {
-        const taskId = `task_${prev.nextId}`
-        log('addTask', { taskId, boardId, columnId, title: taskData.title })
-        return {
-          ...prev,
-          nextId: prev.nextId + 1,
-          tasks: {
-            ...prev.tasks,
-            [taskId]: { id: taskId, ...taskData },
-          },
-          boards: {
-            ...prev.boards,
-            [boardId]: {
-              ...prev.boards[boardId],
-              columns: {
-                ...prev.boards[boardId].columns,
-                [columnId]: {
-                  ...prev.boards[boardId].columns[columnId],
-                  tasks: [
-                    ...(prev.boards[boardId].columns[columnId].tasks || []),
-                    taskId,
-                  ],
-                },
-              },
-            },
-          },
-        }
-      })
-    },
-    [update]
-  )
-
-  const deleteTask = useCallback(
-    (boardId, columnId, taskId) => {
-      log('deleteTask', { taskId, boardId, columnId })
-      update((prev) => ({
+    es.addEventListener('automation-update', (e) => {
+      const update = JSON.parse(e.data)
+      log('SSE automation-update', update.automationId, update.status)
+      setLiveStatuses(prev => ({
         ...prev,
-        boards: {
-          ...prev.boards,
-          [boardId]: {
-            ...prev.boards[boardId],
-            columns: {
-              ...prev.boards[boardId].columns,
-              [columnId]: {
-                ...prev.boards[boardId].columns[columnId],
-                tasks: prev.boards[boardId].columns[columnId].tasks.filter(
-                  (t) => t !== taskId
-                ),
-              },
-            },
-          },
-        },
+        [update.automationId]: { ...(prev[update.automationId] || {}), ...update },
       }))
-    },
-    [update]
-  )
+    })
 
-  const drillIn = useCallback(
-    (taskId) => {
-      update((prev) => {
-        const boardExists = !!prev.boards[taskId]
-        log('drillIn', { taskId, boardExists, newPath: [...prev.boardPath, taskId] })
-        return {
-          ...prev,
-          tasks: boardExists
-            ? prev.tasks
-            : {
-                ...prev.tasks,
-                [taskId]: { ...prev.tasks[taskId], boardId: taskId },
-              },
-          boards: boardExists
-            ? prev.boards
-            : { ...prev.boards, [taskId]: makeEmptyBoard(taskId) },
-          boardPath: [...prev.boardPath, taskId],
-        }
-      })
-    },
-    [update]
-  )
+    es.onerror = () => warn('SSE connection lost — will retry automatically')
 
-  const navigateTo = useCallback(
-    (index) => {
-      update((prev) => {
-        const newPath = prev.boardPath.slice(0, index + 1)
-        log('navigateTo', { index, newPath })
-        return { ...prev, boardPath: newPath }
-      })
-    },
-    [update]
-  )
+    return () => { es.close(); esRef.current = null }
+  }, [])
 
-  const currentBoardId = state.boardPath[state.boardPath.length - 1]
-  const currentBoard = state.boards[currentBoardId]
+  // ── Handlers ──────────────────────────────────────────────────────────────
+  const handleMoveTask = useCallback(async (taskId, targetColumnId, targetPosition) => {
+    log('moveTask', { taskId, targetColumnId, targetPosition })
+    // Optimistic update: refresh board after move
+    await api.moveTask(taskId, targetColumnId, targetPosition)
+    fetchBoard(currentBoardId)
+  }, [currentBoardId, fetchBoard])
 
-  if (!currentBoard) {
-    error('currentBoard is undefined', { currentBoardId, boardPath: state.boardPath })
-  }
+  const handleAddTask = useCallback(async (boardId, columnId, taskData) => {
+    log('addTask', { boardId, columnId, title: taskData.title })
+    await api.createTask(boardId, columnId, {
+      title: taskData.title,
+      dueDate: taskData.due || null,
+    })
+    fetchBoard(boardId)
+  }, [fetchBoard])
 
-  const breadcrumb = state.boardPath.map((boardId, i) => ({
-    boardId,
-    title: boardId === 'root' ? 'Home' : state.tasks[boardId]?.title || boardId,
-    index: i,
-    isCurrent: i === state.boardPath.length - 1,
+  const handleDeleteTask = useCallback(async (taskId) => {
+    log('deleteTask', taskId)
+    await api.deleteTask(taskId)
+    fetchBoard(currentBoardId)
+  }, [currentBoardId, fetchBoard])
+
+  const handleDrillIn = useCallback(async (taskId) => {
+    log('drillIn', taskId)
+    const { boardId } = await api.createSubBoard(taskId)
+    const newPath = [...boardPath, boardId]
+    setBoardPath(newPath)
+    savePath(newPath)
+    // Refresh parent so sub-board indicator updates
+    fetchBoard(boardId)
+  }, [boardPath, fetchBoard])
+
+  const navigateTo = useCallback((index) => {
+    const newPath = boardPath.slice(0, index + 1)
+    log('navigateTo', { index, newPath })
+    setBoardPath(newPath)
+    savePath(newPath)
+  }, [boardPath])
+
+  // ── Breadcrumb labels ─────────────────────────────────────────────────────
+  // When on a sub-board, the board.title is the task's title (set at creation time)
+  const breadcrumb = boardPath.map((bId, i) => ({
+    boardId: bId,
+    title:   bId === 'root' ? 'Home' : (i === boardPath.length - 1 && board ? board.title : bId),
+    index:   i,
+    isCurrent: i === boardPath.length - 1,
   }))
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="app">
       <header className="app-header">
         <span className="app-logo">TaskBoard</span>
-        {state.boardPath.length > 1 && (
+        {boardPath.length > 1 && (
           <nav className="breadcrumb">
             {breadcrumb.map((crumb, i) => (
               <span key={crumb.boardId} className="breadcrumb-item">
                 {i > 0 && <span className="breadcrumb-sep">›</span>}
-                {crumb.isCurrent ? (
-                  <span className="breadcrumb-current">{crumb.title}</span>
-                ) : (
-                  <button
-                    className="breadcrumb-link"
-                    onClick={() => navigateTo(crumb.index)}
-                  >
-                    {crumb.title}
-                  </button>
-                )}
+                {crumb.isCurrent
+                  ? <span className="breadcrumb-current">{crumb.title}</span>
+                  : <button className="breadcrumb-link" onClick={() => navigateTo(crumb.index)}>
+                      {crumb.title}
+                    </button>
+                }
               </span>
             ))}
           </nav>
         )}
       </header>
-      {currentBoard && (
-        <Board
-          key={currentBoardId}
-          boardId={currentBoardId}
-          board={currentBoard}
-          tasks={state.tasks}
-          onMoveTask={moveTask}
-          onAddTask={addTask}
-          onDeleteTask={deleteTask}
-          onDrillIn={drillIn}
-        />
-      )}
+
+      <main className="app-main">
+        {loading && <div className="loading-overlay">Loading…</div>}
+        {fetchError && (
+          <div className="error-banner">
+            Failed to load board: {fetchError}
+            <button onClick={() => fetchBoard(currentBoardId)}>Retry</button>
+          </div>
+        )}
+        {!loading && !fetchError && board && (
+          <Board
+            key={currentBoardId}
+            board={board}
+            liveStatuses={liveStatuses}
+            onMoveTask={handleMoveTask}
+            onAddTask={handleAddTask}
+            onDeleteTask={handleDeleteTask}
+            onDrillIn={handleDrillIn}
+          />
+        )}
+      </main>
     </div>
   )
 }
