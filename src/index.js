@@ -3,23 +3,34 @@ import ReactDOM from 'react-dom'
 import './style.css'
 import initialData from './data'
 import Board from './Board'
+import { log, warn, error } from './logger'
 
 const STORAGE_KEY = 'taskboard_v2'
 
 function loadState() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY)
-    return saved ? JSON.parse(saved) : initialData
-  } catch {
-    return initialData
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      log('State restored from localStorage', {
+        boards: Object.keys(parsed.boards),
+        tasks: Object.keys(parsed.tasks).length,
+        boardPath: parsed.boardPath,
+      })
+      return parsed
+    }
+  } catch (e) {
+    error('Failed to load state from localStorage, using initial data', e)
   }
+  log('Using initial data (no saved state found)')
+  return initialData
 }
 
 function saveState(state) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-  } catch {
-    // storage unavailable — continue in-memory
+  } catch (e) {
+    error('Failed to persist state to localStorage', e)
   }
 }
 
@@ -52,10 +63,23 @@ function App() {
       if (
         source.droppableId === destination.droppableId &&
         source.index === destination.index
-      ) return
+      ) {
+        log('moveTask: dropped in same position, no-op')
+        return
+      }
+
+      log('moveTask', {
+        board: boardId,
+        from: `${source.droppableId}[${source.index}]`,
+        to: `${destination.droppableId}[${destination.index}]`,
+      })
 
       update((prev) => {
         const board = prev.boards[boardId]
+        if (!board) {
+          warn('moveTask: board not found', boardId)
+          return prev
+        }
         const srcId = source.droppableId
         const dstId = destination.droppableId
         const srcTasks = [...board.columns[srcId].tasks]
@@ -87,6 +111,7 @@ function App() {
     (boardId, columnId, taskData) => {
       update((prev) => {
         const taskId = `task_${prev.nextId}`
+        log('addTask', { taskId, boardId, columnId, title: taskData.title })
         return {
           ...prev,
           nextId: prev.nextId + 1,
@@ -118,6 +143,7 @@ function App() {
 
   const deleteTask = useCallback(
     (boardId, columnId, taskId) => {
+      log('deleteTask', { taskId, boardId, columnId })
       update((prev) => ({
         ...prev,
         boards: {
@@ -144,6 +170,7 @@ function App() {
     (taskId) => {
       update((prev) => {
         const boardExists = !!prev.boards[taskId]
+        log('drillIn', { taskId, boardExists, newPath: [...prev.boardPath, taskId] })
         return {
           ...prev,
           tasks: boardExists
@@ -164,16 +191,21 @@ function App() {
 
   const navigateTo = useCallback(
     (index) => {
-      update((prev) => ({
-        ...prev,
-        boardPath: prev.boardPath.slice(0, index + 1),
-      }))
+      update((prev) => {
+        const newPath = prev.boardPath.slice(0, index + 1)
+        log('navigateTo', { index, newPath })
+        return { ...prev, boardPath: newPath }
+      })
     },
     [update]
   )
 
   const currentBoardId = state.boardPath[state.boardPath.length - 1]
   const currentBoard = state.boards[currentBoardId]
+
+  if (!currentBoard) {
+    error('currentBoard is undefined', { currentBoardId, boardPath: state.boardPath })
+  }
 
   const breadcrumb = state.boardPath.map((boardId, i) => ({
     boardId,
@@ -206,16 +238,18 @@ function App() {
           </nav>
         )}
       </header>
-      <Board
-        key={currentBoardId}
-        boardId={currentBoardId}
-        board={currentBoard}
-        tasks={state.tasks}
-        onMoveTask={moveTask}
-        onAddTask={addTask}
-        onDeleteTask={deleteTask}
-        onDrillIn={drillIn}
-      />
+      {currentBoard && (
+        <Board
+          key={currentBoardId}
+          boardId={currentBoardId}
+          board={currentBoard}
+          tasks={state.tasks}
+          onMoveTask={moveTask}
+          onAddTask={addTask}
+          onDeleteTask={deleteTask}
+          onDrillIn={drillIn}
+        />
+      )}
     </div>
   )
 }

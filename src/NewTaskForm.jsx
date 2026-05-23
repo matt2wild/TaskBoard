@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { log, warn } from './logger'
 
 export default function NewTaskForm({ onAdd }) {
   const [expanded, setExpanded] = useState(false)
@@ -7,7 +8,11 @@ export default function NewTaskForm({ onAdd }) {
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    if (!title.trim()) return
+    if (!title.trim()) {
+      warn('NewTaskForm: submit blocked — title is empty')
+      return
+    }
+    log('NewTaskForm: submitting', { title: title.trim(), due: due || null })
     onAdd({ title: title.trim(), due: due || null })
     setTitle('')
     setDue('')

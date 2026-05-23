@@ -1,10 +1,15 @@
 import React from 'react'
 import { DragDropContext } from 'react-beautiful-dnd'
 import Lane from './lane'
+import { log, warn } from './logger'
 
 export default function Board({ boardId, board, tasks, onMoveTask, onAddTask, onDeleteTask, onDrillIn }) {
   const onDragEnd = (result) => {
-    if (!result.destination) return
+    if (!result.destination) {
+      warn('onDragEnd: no destination, drag cancelled', { draggableId: result.draggableId })
+      return
+    }
+    log('onDragEnd', { draggableId: result.draggableId, source: result.source, destination: result.destination })
     onMoveTask(boardId, result.source, result.destination)
   }
 
