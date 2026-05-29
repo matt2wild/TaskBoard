@@ -51,3 +51,32 @@ export const triggerAutomation = (id) => request('POST', `/api/automations/${id}
 
 export const getAutomationLogs = (id, limit = 20) =>
   request('GET', `/api/automations/${id}/logs?limit=${limit}`)
+
+// ── V-Diagram ─────────────────────────────────────────────────────────────────
+
+export const getVDiagram = (taskId) =>
+  request('GET', `/api/tasks/${taskId}/vdiagram`)
+
+export const addRequirement = (taskId, data) =>
+  request('POST', `/api/tasks/${taskId}/requirements`, data)
+
+export const updateRequirement = (id, data) =>
+  request('PATCH', `/api/requirements/${id}`, data)
+
+export const deleteRequirement = (id) =>
+  request('DELETE', `/api/requirements/${id}`)
+
+export const addVerification = (taskId, data) =>
+  request('POST', `/api/tasks/${taskId}/verifications`, data)
+
+export const updateVerification = (id, data) =>
+  request('PATCH', `/api/verifications/${id}`, data)
+
+export const deleteVerification = (id) =>
+  request('DELETE', `/api/verifications/${id}`)
+
+export const linkReqVer = (reqId, verId) =>
+  request('POST', `/api/requirements/${reqId}/link/${verId}`)
+
+export const unlinkReqVer = (reqId, verId) =>
+  request('DELETE', `/api/requirements/${reqId}/link/${verId}`)

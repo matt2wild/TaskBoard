@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { Draggable } from 'react-beautiful-dnd'
 import { triggerAutomation, getAutomationLogs } from './api'
 import { log } from './logger'
+import VDiagram from './VDiagram'
 
 const STATUS_ICON = {
   pending:  { icon: '◌', cls: 'status-pending'  },
@@ -98,6 +99,7 @@ function AutomationDetail({ automation, liveStatus, onClose }) {
 
 export default function AutomationCard({ task, index, liveStatuses, onDelete }) {
   const [expanded, setExpanded] = useState(false)
+  const [showVD,   setShowVD]   = useState(false)
 
   // A task in the automation column may have multiple automations
   const automations = task.automations || []
@@ -108,6 +110,7 @@ export default function AutomationCard({ task, index, liveStatuses, onDelete }) 
   const si      = STATUS_ICON[status] || STATUS_ICON.pending
 
   return (
+    <>
     <Draggable draggableId={task.id} index={index}>
       {(provided, snapshot) => (
         <div
@@ -122,6 +125,13 @@ export default function AutomationCard({ task, index, liveStatuses, onDelete }) 
               {task.due_date && <span className="tag due-tag">{task.due_date}</span>}
             </div>
             <div className="card-actions">
+              <button
+                className="btn-vd"
+                onClick={(e) => { e.stopPropagation(); setShowVD(true) }}
+                title="V-diagram: requirements & verification"
+              >
+                V
+              </button>
               {primaryAuto && (
                 <button
                   className="btn-auto-expand"
@@ -172,5 +182,14 @@ export default function AutomationCard({ task, index, liveStatuses, onDelete }) 
         </div>
       )}
     </Draggable>
+
+    {showVD && (
+      <VDiagram
+        taskId={task.id}
+        taskTitle={task.title}
+        onClose={() => setShowVD(false)}
+      />
+    )}
+    </>
   )
 }

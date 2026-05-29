@@ -5,6 +5,7 @@ const log     = require('./logger')
 
 const boardRoutes      = require('./routes/boards')
 const automationRoutes = require('./routes/automations')
+const vdiagramRoutes   = require('./routes/vdiagram')
 const { startAll }     = require('./automation/runner')
 
 const app  = express()
@@ -19,6 +20,7 @@ app.get('/api/health', (req, res) => res.json({ ok: true, ts: new Date().toISOSt
 // ── API routes ────────────────────────────────────────────────────────────────
 app.use('/api/boards',      boardRoutes)
 app.use('/api/automations', automationRoutes)
+app.use('/api',             vdiagramRoutes)
 
 // Webhook receiver hangs off the automations router but needs its own path
 // (already registered inside automations.js as /webhooks/:id on the router,

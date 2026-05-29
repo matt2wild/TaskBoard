@@ -71,10 +71,44 @@ db.exec(`
     run_at         TEXT DEFAULT (datetime('now'))
   );
 
-  CREATE INDEX IF NOT EXISTS idx_tasks_board     ON tasks(board_id);
-  CREATE INDEX IF NOT EXISTS idx_tasks_column    ON tasks(column_id);
-  CREATE INDEX IF NOT EXISTS idx_columns_board   ON columns(board_id);
-  CREATE INDEX IF NOT EXISTS idx_logs_automation ON automation_logs(automation_id);
+  CREATE TABLE IF NOT EXISTS requirements (
+    id          TEXT PRIMARY KEY,
+    task_id     TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    text        TEXT NOT NULL,
+    priority    TEXT NOT NULL DEFAULT 'medium'
+                  CHECK(priority IN ('high','medium','low')),
+    source      TEXT,
+    position    INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS verifications (
+    id           TEXT PRIMARY KEY,
+    task_id      TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    text         TEXT NOT NULL,
+    type         TEXT NOT NULL DEFAULT 'manual'
+                   CHECK(type IN ('manual','automated','inspection','demonstration')),
+    status       TEXT NOT NULL DEFAULT 'pending'
+                   CHECK(status IN ('pending','in_progress','passed','failed')),
+    result_notes TEXT,
+    verified_at  TEXT,
+    position     INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT DEFAULT (datetime('now'))
+  );
+
+  -- Many-to-many: each requirement can map to many verifications and vice-versa
+  CREATE TABLE IF NOT EXISTS req_ver_links (
+    requirement_id  TEXT NOT NULL REFERENCES requirements(id) ON DELETE CASCADE,
+    verification_id TEXT NOT NULL REFERENCES verifications(id) ON DELETE CASCADE,
+    PRIMARY KEY (requirement_id, verification_id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_tasks_board        ON tasks(board_id);
+  CREATE INDEX IF NOT EXISTS idx_tasks_column       ON tasks(column_id);
+  CREATE INDEX IF NOT EXISTS idx_columns_board      ON columns(board_id);
+  CREATE INDEX IF NOT EXISTS idx_logs_automation    ON automation_logs(automation_id);
+  CREATE INDEX IF NOT EXISTS idx_reqs_task          ON requirements(task_id);
+  CREATE INDEX IF NOT EXISTS idx_vers_task          ON verifications(task_id);
 `)
 
 // ── Seed ───────────────────────────────────────────────────────────────────
@@ -145,6 +179,35 @@ function seed() {
       JSON.stringify({ checkType: 'port', host: 'localhost', port: 3001 }),
       '*/1 * * * *'
     )
+
+    // ── V-diagram demo on "Finish Bookshelf" (task_3) ───────────────────
+    const insertReq = db.prepare(`
+      INSERT INTO requirements (id, task_id, text, priority, source, position)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `)
+    const insertVer = db.prepare(`
+      INSERT INTO verifications (id, task_id, text, type, status, position)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `)
+    const insertLink = db.prepare(
+      'INSERT INTO req_ver_links (requirement_id, verification_id) VALUES (?, ?)'
+    )
+
+    const r1 = randomUUID(), r2 = randomUUID(), r3 = randomUUID()
+    const v1 = randomUUID(), v2 = randomUUID(), v3 = randomUUID()
+
+    insertReq.run(r1, 'task_3', 'All boards must be smooth and splinter-free',      'high',   'Product spec', 0)
+    insertReq.run(r2, 'task_3', 'Stain color matches dark coffee reference swatch', 'high',   'Product spec', 1)
+    insertReq.run(r3, 'task_3', 'All joints flush and structurally sound',          'medium', 'Safety',       2)
+
+    insertVer.run(v1, 'task_3', 'Visual and tactile inspection of all surfaces', 'inspection',    'pending', 0)
+    insertVer.run(v2, 'task_3', 'Color swatch comparison under natural light',   'manual',        'pending', 1)
+    insertVer.run(v3, 'task_3', 'Load test with 30 kg weight for 24 h',          'demonstration', 'pending', 2)
+
+    insertLink.run(r1, v1)
+    insertLink.run(r2, v2)
+    insertLink.run(r3, v1)
+    insertLink.run(r3, v3)
   })()
 
   log.info('Seed complete')
