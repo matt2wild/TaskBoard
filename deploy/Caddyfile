@@ -1,0 +1,5 @@
+# Caddy gets a certificate for you and needs no other configuration.
+home.example.com {
+	encode zstd gzip
+	reverse_proxy homestead:8080
+}

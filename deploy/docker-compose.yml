@@ -1,0 +1,32 @@
+# Homestead: one container, one database file, one directory of uploads.
+services:
+  homestead:
+    image: ghcr.io/matt2wild/homestead:latest
+    # To build locally instead of pulling:
+    # build: { context: .., dockerfile: deploy/Dockerfile }
+    container_name: homestead
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - homestead-data:/data
+    environment:
+      # The application works with no internet access. Everything here is optional.
+      TZ: ${TZ:-UTC}
+      # Used to encrypt sensitive fields at rest. Generate once and keep it:
+      #   openssl rand -base64 48
+      HOMESTEAD_SECRET_KEY: ${HOMESTEAD_SECRET_KEY:-}
+      # Set behind a reverse proxy so client IPs and protocol are read correctly.
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      # Email reminders. Leave unset and reminders stay in the in-app inbox.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-homestead@localhost}
+      # Push to a self-hosted ntfy or Gotify instead of, or as well as, email.
+      NTFY_URL: ${NTFY_URL:-}
+      NTFY_TOPIC: ${NTFY_TOPIC:-}
+
+volumes:
+  homestead-data:

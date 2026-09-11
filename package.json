@@ -1,41 +1,31 @@
 {
-  "name": "taskboard",
+  "name": "homestead",
   "version": "0.1.0",
   "private": true,
-  "dependencies": {
-    "@testing-library/jest-dom": "^5.16.1",
-    "@testing-library/react": "^12.1.2",
-    "@testing-library/user-event": "^13.5.0",
-    "graphql": "^16.3.0",
-    "react": "^17.0.2",
-    "react-beautiful-dnd": "^13.1.0",
-    "react-dom": "^17.0.2",
-    "react-hook-form": "^7.26.0",
-    "react-scripts": "5.0.0",
-    "web-vitals": "^2.1.4"
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
   },
   "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "dev": "npm run dev --workspace @homestead/server & npm run dev --workspace @homestead/web",
+    "build": "npm run build --workspace @homestead/shared && npm run build --workspace @homestead/server && npm run build --workspace @homestead/web",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "start": "node apps/server/dist/main.js",
+    "seed": "npm run seed --workspace @homestead/server"
   },
-  "eslintConfig": {
-    "extends": [
-      "react-app",
-      "react-app/jest"
-    ]
-  },
-  "browserslist": {
-    "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all"
-    ],
-    "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
-    ]
+  "devDependencies": {
+    "@types/node": "^22.13.1",
+    "drizzle-kit": "^0.31.10",
+    "drizzle-orm": "^0.45.2",
+    "playwright": "^1.63.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
   }
 }

@@ -1,0 +1,9 @@
+# Drop these labels onto the homestead service when Traefik is your proxy.
+services:
+  homestead:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.homestead.rule=Host(`home.example.com`)"
+      - "traefik.http.routers.homestead.entrypoints=websecure"
+      - "traefik.http.routers.homestead.tls.certresolver=letsencrypt"
+      - "traefik.http.services.homestead.loadbalancer.server.port=8080"
