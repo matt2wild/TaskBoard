@@ -27,26 +27,29 @@
 10. [Module: Renovation Project Planning](#10-module-renovation-project-planning)
 11. [Module: Budgeting](#11-module-budgeting)
 12. [Module: Greenhouse Gas and Energy](#12-module-greenhouse-gas-and-energy)
-13. [Module: Food and Pantry](#13-module-food-and-pantry)
-14. [Module: General Storage](#14-module-general-storage)
-15. [Module: Tools](#15-module-tools)
-16. [Module: Cat Health](#16-module-cat-health)
-17. [Module: Contacts and Vendors](#17-module-contacts-and-vendors)
-18. [Module: Documents and Attachments](#18-module-documents-and-attachments)
-19. [Module: Dashboard, Notifications and Reminders](#19-module-dashboard-notifications-and-reminders)
-20. [Module Integration Matrix](#20-module-integration-matrix)
-21. [Data Model](#21-data-model)
-22. [API Requirements](#22-api-requirements)
-23. [User Experience Requirements](#23-user-experience-requirements)
-24. [Non-Functional Requirements](#24-non-functional-requirements)
-25. [Self-Hosting, Deployment and Operations](#25-self-hosting-deployment-and-operations)
-26. [Security and Privacy](#26-security-and-privacy)
-27. [Recommended Technical Architecture](#27-recommended-technical-architecture)
-28. [Delivery Plan and Milestones](#28-delivery-plan-and-milestones)
-29. [Acceptance Criteria and Test Strategy](#29-acceptance-criteria-and-test-strategy)
-30. [Risks and Mitigations](#30-risks-and-mitigations)
-31. [Open Questions and Assumptions](#31-open-questions-and-assumptions)
-32. [Glossary](#32-glossary)
+13. [Module: Garden and Growing](#13-module-garden-and-growing)
+14. [Module: Compost](#14-module-compost)
+15. [Module: Circular Economy — Repair, Reuse, Repurpose](#15-module-circular-economy--repair-reuse-repurpose)
+16. [Module: Food and Pantry](#16-module-food-and-pantry)
+17. [Module: General Storage](#17-module-general-storage)
+18. [Module: Tools](#18-module-tools)
+19. [Module: Cat Health](#19-module-cat-health)
+20. [Module: Contacts and Vendors](#20-module-contacts-and-vendors)
+21. [Module: Documents and Attachments](#21-module-documents-and-attachments)
+22. [Module: Dashboard, Notifications and Reminders](#22-module-dashboard-notifications-and-reminders)
+23. [Module Integration Matrix](#23-module-integration-matrix)
+24. [Data Model](#24-data-model)
+25. [API Requirements](#25-api-requirements)
+26. [User Experience Requirements](#26-user-experience-requirements)
+27. [Non-Functional Requirements](#27-non-functional-requirements)
+28. [Self-Hosting, Deployment and Operations](#28-self-hosting-deployment-and-operations)
+29. [Security and Privacy](#29-security-and-privacy)
+30. [Recommended Technical Architecture](#30-recommended-technical-architecture)
+31. [Delivery Plan and Milestones](#31-delivery-plan-and-milestones)
+32. [Acceptance Criteria and Test Strategy](#32-acceptance-criteria-and-test-strategy)
+33. [Risks and Mitigations](#33-risks-and-mitigations)
+34. [Open Questions and Assumptions](#34-open-questions-and-assumptions)
+35. [Glossary](#35-glossary)
 33. [Appendix A: Requirement ID Index](#appendix-a-requirement-id-index)
 34. [Appendix B: Seed Data and Defaults](#appendix-b-seed-data-and-defaults)
 35. [Appendix C: Example User Journeys](#appendix-c-example-user-journeys)
@@ -78,6 +81,9 @@ Every requirement has a stable ID (`PREFIX-NNN`), a priority, and an acceptance 
 | RENO | Renovation project planning |
 | BUD | Budgeting |
 | GHG | Greenhouse gas and energy |
+| GARD | Garden and growing |
+| COMP | Compost |
+| CIRC | Circular economy: repair, reuse, repurpose |
 | FOOD | Food and pantry |
 | STOR | General storage |
 | TOOL | Tools |
@@ -106,19 +112,20 @@ Commercial "home inventory" or "home maintenance" apps are cloud-only, subscript
 
 ### 1.2 Vision
 
-Homestead is a **self-hosted, single-household, multi-user web application** that acts as the household's operating system. It keeps a canonical record of the home, the things in it, the work done to it, the money spent on it, the food in it, and the animals living in it, and it **connects those records** so that each module makes the others smarter.
+Homestead is a **self-hosted, single-household, multi-user web application** that acts as the household's operating system. It keeps a canonical record of the home, the things in it, the work done to it, the money spent on it, the greenhouse gases it releases, the food it buys and grows, and the animals living in it, and it **connects those records** so that each module makes the others smarter.
 
 ### 1.3 Goals
 
 | # | Goal | Measure |
 |---|---|---|
 | G1 | One place for all household operational data | Every module listed in scope ships and is usable end to end. |
-| G2 | Modules are integrated, not siloed | The integration matrix in section 20 is fully implemented for Must-priority links. |
+| G2 | Modules are integrated, not siloed | The integration matrix in section 23 is fully implemented for Must-priority links. |
 | G3 | Own your data | 100% of user data exportable in open formats; runs fully offline from the internet. |
 | G4 | Low operational burden | One `docker compose up` to run; backups are a single file/directory; upgrades are a container pull. |
 | G5 | Fast daily capture | Common capture actions (log a purchase, check off a chore, scan a pantry item, record a cat's weight) take under 15 seconds on a phone. |
 | G6 | Trustworthy reminders | Users can rely on the app to surface what needs doing today without opening every module. |
 | G7 | Carbon is a unit of account, not a report | Every asset, project and pet shows what it emitted beside what it cost, from the same ledger, without double entry. |
+| G8 | The household's own loops are visible | What the garden produced, what the pile diverted and what a repair saved are recorded where they happen, and reported as counterfactuals that never flatter the footprint. |
 
 ### 1.4 Non-goals
 
@@ -141,7 +148,10 @@ Homestead is a **self-hosted, single-household, multi-user web application** tha
 | Maintenance | Recurring and one-off maintenance schedules, service history, warranties, manuals. |
 | Renovation project planning | Multi-phase projects with tasks, dependencies, materials, quotes, permits, contractors, photos, and budgets. |
 | Budgeting | Categories, budgets, transactions, recurring bills, project budgets, goals, reporting, CSV import. |
-| Greenhouse gas and energy | Emission factors, activities, energy metering, embodied and operating carbon, per-entity footprints, carbon budgets, and intervention payback. |
+| Greenhouse gas and energy | Emission factors as gas vectors, activities, energy metering, embodied and operating carbon, per-gas and per-entity footprints at either warming horizon, carbon budgets, and intervention payback. |
+| Garden and growing | Beds, a variety catalogue, seed inventory with viability and germination testing, plantings with their own tasks, rotation warnings, harvests that enter the pantry, and the garden's net position. |
+| Compost | Compost systems and their inputs, a material library with C:N ratios, pile management by temperature and turning, finished compost back to the beds, and the methane a landfill did not get. |
+| Circular economy | Repairs with their extended life and avoided replacement, repair-or-replace comparison, circulation of items by route, salvaged material, and seed saved from the household's own plants. |
 | Food and pantry | Multiple storage areas, item quantities, expiry tracking, barcode scanning, shopping lists, optional recipes and meal planning. |
 | General storage | Hierarchical locations, containers, item catalogue, QR/label printing, "where is X" search, lending. |
 | Tools | Tool inventory, consumables, batteries, maintenance, loans, project tool lists. |
@@ -203,6 +213,8 @@ Homestead is a **self-hosted, single-household, multi-user web application** tha
 7. **Mobile is the capture device, desktop is the planning device.** Design the phone experience around scanning, tapping and dictation; design the desktop experience around tables, drag-and-drop and bulk edit.
 8. **Reminders must be trusted.** A reminder that fires late, twice, or not at all is a critical bug, not a papercut.
 9. **No lock-in to Homestead's own conventions.** Use RFC 5545 for recurrence, ISO 4217 for currency, ISO 8601 for dates, GS1 barcodes for products, UCUM-compatible units where practical.
+10. **Aggregate late.** Store the thing that was measured — grams of methane, not only its equivalence; a harvest in the unit it was picked in — and derive the summary at the point of reading. A number that was collapsed on the way in cannot be un-collapsed on the way out.
+11. **Never flatter the household.** What a household avoided is not what it emitted, and the two are reported apart. A failed planting, a repair that did not hold and a pile that went anaerobic are all worth recording, because the point of a record is to be useful rather than encouraging.
 
 ---
 
@@ -219,10 +231,14 @@ Homestead is a **self-hosted, single-household, multi-user web application** tha
 │ Maintenance│ │ Renovation │ │  Food &  │ │  General  │ │    Cat    │
 │            │ │  Projects  │ │  Pantry  │ │  Storage  │ │  Health   │
 └──────┬─────┘ └─────┬──────┘ └────┬─────┘ └─────┬─────┘ └─────┬─────┘
-       │             │             │             │             │
-       │      ┌──────┴──────┐      │             │             │
-       │      │    Tools    │      │             │             │
-       │      └──────┬──────┘      │             │             │
+       │             │             │  ▲          │             │
+       │      ┌──────┴──────┐      │  │          │             │
+       │      │    Tools    │      │  │          │             │
+       │      └──────┬──────┘      │  │          │             │
+       │             │     ┌───────┴──┴───────┐  │             │
+       │             │     │ Garden → Compost │  │             │
+       │             │     │   ↑    Circular  │  │             │
+       │             │     └────┴─────────────┘  │             │
        ▼             ▼             ▼             ▼             ▼
 ┌────────────────────────────────────────────────────────────────────────────┐
 │  Shared services: Tasks & Scheduling · Budget · Asset/Location Registry ·  │
@@ -230,7 +246,7 @@ Homestead is a **self-hosted, single-household, multi-user web application** tha
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Layering rule:** Feature modules (top row) may depend on shared services (bottom row) and on each other only through the documented integration points in section 20. Shared services never depend on feature modules.
+**Layering rule:** Feature modules (top row) may depend on shared services (bottom row) and on each other only through the documented integration points in section 23. Shared services never depend on feature modules.
 
 ---
 
@@ -246,7 +262,7 @@ Homestead is a **self-hosted, single-household, multi-user web application** tha
 | GEN-004 | M | Deletion of user-created records shall be soft (a `deleted_at` timestamp) with an admin-visible "trash" allowing restore for 30 days (configurable) before permanent purge. |
 | GEN-005 | M | Every entity type shall support free-form **tags** (household-wide tag vocabulary with colour and optional description). |
 | GEN-006 | M | Every entity type shall support a free-form **notes** field with Markdown rendering. |
-| GEN-007 | M | Every entity type shall support **attachments** (see section 18) and **links** to any other entity (polymorphic `entity_link`). |
+| GEN-007 | M | Every entity type shall support **attachments** (see section 21) and **links** to any other entity (polymorphic `entity_link`). |
 | GEN-008 | M | The system shall provide a global search across all modules that returns typed results (e.g. "Tool: Impact driver", "Pantry: Black beans") with keyboard navigation. Results shall respect the caller's permissions. |
 | GEN-009 | M | The system shall maintain an **activity log** (audit trail) of create/update/delete on all entities, recording actor, timestamp, entity, and a field-level diff. Admins can view the log; members can view the log of any entity they can read. |
 | GEN-010 | M | All dates shall be stored in UTC with the household's configured timezone used for display and for scheduling "wall clock" reminders. All-day dates (e.g. expiry dates) shall be stored as calendar dates without a time component. |
@@ -466,7 +482,7 @@ The budgeting module is a **household cash-flow and envelope budget** tool whose
 Emissions are not a report the household writes once a year. They are a **second unit of
 account**, produced by the same events that produce spending, and attributed to the same
 things. Every place the system already asks "what did that cost?" it can ask "what did that
-emit?", and the answer comes from the same ledger machinery (INT-001, section 20.12).
+emit?", and the answer comes from the same ledger machinery (INT-001, section 23.12).
 
 This module is therefore designed as a peer of Budgeting rather than a bolt-on: the
 furnace, the bathroom remodel and the cat each carry a footprint the same way they carry a
@@ -538,11 +554,193 @@ transaction and one activity, recorded once.
 | GHG-029 | S | The system shall be honest about uncertainty: factor categories carry a qualitative confidence, and reports shall not present household estimates to a false precision. |
 | GHG-030 | W | Supplier-specific or product-level lifecycle data beyond the shipped categories. |
 
+### 12.3 Individual gases
+
+Carbon dioxide equivalent is a convenience, and like most conveniences it hides the thing
+that matters. Methane is roughly thirty times as warming as carbon dioxide over a century
+and roughly eighty times as warming over twenty years, because it is a strong absorber
+that leaves the atmosphere quickly. Collapsing it into CO₂e at a hundred-year horizon —
+the default nearly everywhere — makes a household's two most consequential decisions,
+what it does with its food waste and whether it burns gas, look far less important than
+they are.
+
+So the system tracks gases, and derives equivalence rather than starting from it.
+
+| ID | Pri | Requirement |
+|---|---|---|
+| GHG-031 | M | The system shall maintain a **gas registry**: carbon dioxide, methane (distinguishing fossil from biogenic origin), nitrous oxide, and the refrigerant gases a household encounters. Each shall carry its global warming potential at both the 100-year and 20-year horizons, the assessment report those values come from, and its atmospheric lifetime. |
+| GHG-032 | M | An emission factor shall be able to express its coefficient as a **vector of gases** — kilograms of each gas per activity unit — rather than a single CO₂e figure. Where a published factor gives only CO₂e, it shall be recorded as such and identified as an unspecified mixture; the system shall never invent a gas split that its source does not support. |
+| GHG-033 | M | Recording an activity shall store **one emission row per gas**, capturing the mass of the gas itself, the global warming potential applied, and the horizon it came from. The CO₂e figure shall be derived and stored alongside, so that existing totals remain correct and the underlying masses remain available. |
+| GHG-034 | M | Users shall be able to view any footprint at either horizon. Switching horizon shall **recompute from the stored gas masses** and shall not alter what is recorded, on the same principle as factor correction (GHG-005). The horizon in force shall be stated on every figure that depends on it. |
+| GHG-035 | M | Reporting shall break a footprint down **by gas** as well as by scope, category, month and entity, and shall show what proportion of the total each gas is responsible for at the horizon in view. |
+| GHG-036 | S | The system shall surface where the choice of horizon **changes the conclusion** — a comparison whose ranking reverses between 20 and 100 years — rather than leaving the user to notice. |
+| GHG-037 | S | **Biogenic carbon** shall be distinguished from fossil carbon, so that wood, compost and food are accounted on their non-CO₂ emissions rather than being double-counted against the carbon they took up while growing. The treatment shall be stated in the report, not assumed. |
+| GHG-038 | M | **Avoided emissions** — what composting did not send to landfill, what a repair did not have manufactured, what a harvest did not have shipped — shall be computed against a stated counterfactual, reported separately, and never added to or subtracted from the household's own footprint. An avoided tonne is not an emitted tonne, and conflating them is the most common dishonesty in carbon accounting. |
+| GHG-039 | S | A household shall be able to change the default horizon for its own reporting, and the choice shall be recorded with the reason, since it is an editorial decision rather than a technical one. |
+| GHG-040 | C | Where a factor's gas split is inferred rather than published, it shall be marked as such and excluded from gas-level reporting unless the user opts in. |
+
 ---
 
-## 13. Module: Food and Pantry
+## 13. Module: Garden and Growing
 
-### 13.1 Concepts
+The garden is where the household stops being only a consumer. It produces food, it
+consumes inputs, and it is the one part of the house with a genuine biological cycle: seed
+to plant to harvest to seed. The module exists to keep that cycle recorded, because the
+cycle is what makes it different from the pantry.
+
+A garden is also the module most likely to be abandoned. A person who has to log every
+weeding will stop in June. So the requirement is not completeness, it is that the small
+number of things worth remembering across years — what was planted where, what actually
+produced, what the frost did — survive the season.
+
+### 13.1 Beds and ground
+
+| ID | Pri | Requirement |
+|---|---|---|
+| GARD-001 | M | Users shall define **beds**: name, property, optional location in the tree, growing method (raised, in-ground, container, greenhouse, polytunnel, hydroponic), area, sun exposure, irrigation, soil notes and active season. A bed is a place with a history, not a drawing. |
+| GARD-002 | M | Beds shall be attributable targets for cost and emissions, on the same shared ledger as every other entity (INT-007), so "what has this bed cost and yielded" is one query. |
+| GARD-003 | S | Users shall record **soil tests** against a bed: date, pH, N/P/K, organic matter, lab, and notes; and amendments applied with quantity and source. |
+| GARD-004 | S | The system shall warn on **crop rotation** conflicts: sowing a variety whose botanical family was grown in that bed within a configurable window (default two seasons). The warning shall name the previous planting and be dismissible, never blocking. |
+| GARD-005 | C | Beds shall support a simple **layout**: rows or a grid of cells, so a square-foot planting can be drawn rather than described. |
+
+### 13.2 Varieties and seed
+
+| ID | Pri | Requirement |
+|---|---|---|
+| GARD-006 | M | The system shall maintain a **variety** catalogue: common name, cultivar, botanical family, species, days to maturity, sowing depth and spacing, sun and frost tolerance, annual or perennial, whether it is open-pollinated (and so can be saved true), typical seed viability in years, and notes. |
+| GARD-007 | M | The system shall ship a starter variety library covering the common temperate vegetable, herb and soft-fruit crops, each with its botanical family so rotation works out of the box. Shipped entries shall be editable; a household's own cultivars are first-class. |
+| GARD-008 | M | Users shall hold **seed lots** as real inventory: variety, quantity and unit, year packed, origin (bought, saved, swapped, gifted, library), supplier or the planting it was saved from, storage location, cost, and notes. A seed lot is stock, subject to the same location tree as anything else. |
+| GARD-009 | M | The system shall flag seed lots **past their viability** for the variety, and shall show a lot's age in seasons rather than only its packing year. |
+| GARD-010 | S | Users shall record a **germination test**: lot, date, seeds tested, seeds germinated, and the resulting rate, which shall be shown wherever the lot is offered for sowing. A tested old lot beats an untested new one. |
+| GARD-011 | S | Sowing from a lot shall decrement it. A lot that reaches zero shall stay in the record as history, not vanish. |
+
+### 13.3 Plantings and the season
+
+| ID | Pri | Requirement |
+|---|---|---|
+| GARD-012 | M | Users shall record a **planting**: variety, bed, seed lot where one was used, method (direct sown, started under cover, transplant bought in), dates for sowing, transplanting and expected first harvest, quantity, and status (planned, growing, harvesting, finished, failed). |
+| GARD-013 | M | A planting shall generate its own **tasks** through the core task engine — start indoors, harden off, transplant, feed, expected first harvest — dated from the variety's days to maturity and the property's frost dates. These are ordinary tasks and appear wherever tasks appear (INT-002). |
+| GARD-014 | M | The system shall hold the property's **frost dates** (last spring, first autumn) and derive sowing windows from them, showing for any variety whether it is too early, in the window, or too late to sow today. |
+| GARD-015 | S | Users shall plan **succession sowings**: repeat a planting every N days for a count or until a date, producing separate plantings rather than one vague entry. |
+| GARD-016 | S | Users shall record **observations** against a planting or bed: pests, disease, weather damage, a note, or a photograph, dated. |
+| GARD-017 | S | A planting that failed shall record why, and the reason shall be visible the next time that variety is sown in that bed. The point of a garden record is not to flatter. |
+
+### 13.4 Harvest
+
+| ID | Pri | Requirement |
+|---|---|---|
+| GARD-018 | M | Users shall record a **harvest** against a planting: date, quantity and unit, and quality. Harvest shall be enterable in one action from the planting, the bed or a garden dashboard. |
+| GARD-019 | M | A harvest shall be able to **enter the pantry as stock** in one step, creating a stock item at the chosen location with its expiry, so home-grown food is tracked exactly like bought food (INT-009). |
+| GARD-020 | S | A harvest shall carry an **estimated value**: what the same quantity would have cost, taken from the household's own price history for a matching product where one exists, and from a shipped default otherwise. The basis shall be stated. |
+| GARD-021 | S | The system shall report **yield per bed and per planting** across seasons: total harvested, value, and yield per unit area, so next year's plan can be argued from this year's record. |
+| GARD-022 | C | The system shall estimate **avoided emissions** for home-grown produce against the bought equivalent, reported as a counterfactual and never added to the footprint (GHG-034). |
+
+### 13.5 Inputs and honesty
+
+| ID | Pri | Requirement |
+|---|---|---|
+| GARD-023 | M | Garden **inputs** — compost, bought soil, fertiliser, fuel for a tiller, water, plastic, netting — shall be recordable against a bed or the garden as a whole, and shall carry both cost and emissions like any other purchase (INT-008). A garden that is a net emitter should be able to say so. |
+| GARD-024 | S | The system shall report the garden's **net position**: what it cost and emitted against what it yielded and displaced, over a season and cumulatively. |
+
+---
+
+## 14. Module: Compost
+
+Composting is where the household's waste stops being waste, and it is the single place in
+the house where the choice between two ordinary actions has a large greenhouse gas
+consequence. Food in a landfill decomposes without oxygen and produces methane. The same
+food in a working pile produces mostly carbon dioxide and a fraction of the methane. Over
+twenty years the difference is not marginal.
+
+That is why this module exists as a peer of the others rather than a corner of the garden:
+it is a waste route, a garden input, and a methane decision at the same time.
+
+### 14.1 Systems and inputs
+
+| ID | Pri | Requirement |
+|---|---|---|
+| COMP-001 | M | Users shall define **compost systems**: name, method (hot pile, cold pile, tumbler, worm bin, bokashi, trench, municipal collection), location, capacity, active dates and status. A household commonly runs more than one, and they behave differently. |
+| COMP-002 | M | Users shall record **inputs** to a system: material, quantity and unit, date, and where it came from. Adding a material shall be two taps from the kitchen, or it will not happen. |
+| COMP-003 | M | The system shall ship a **material library** with, for each material, its carbon-to-nitrogen ratio, whether it counts as green or brown, typical moisture, and whether it belongs in a domestic pile at all. Each entry shall name its source. |
+| COMP-004 | M | Wasting food from the pantry shall offer **compost as the disposal route** alongside the bin, and choosing it shall create the compost input and the emission record in one action, with no re-entry (INT-010). |
+| COMP-005 | S | The system shall compute the pile's running **carbon-to-nitrogen balance** from its inputs and advise plainly when it is out of range — "add browns" — against a target band (default 25–30:1). |
+| COMP-006 | C | Garden waste from a finished or failed planting shall be enterable as a compost input directly from the planting. |
+
+### 14.2 Managing the pile
+
+| ID | Pri | Requirement |
+|---|---|---|
+| COMP-007 | M | Users shall record **events** against a system: turned, watered, harvested, temperature taken, with date and note. |
+| COMP-008 | S | Temperature readings shall be charted over the life of a batch, since temperature is how a hot pile is actually managed, and the system shall flag a pile that has fallen out of the thermophilic range for longer than a configurable period. |
+| COMP-009 | S | A system shall generate **turn reminders** through the core task engine on the schedule its method implies, floating from the last actual turn rather than a fixed calendar (INT-002). |
+| COMP-010 | C | Users shall track discrete **batches** within a system, so a tumbler with two chambers reports two maturities. |
+
+### 14.3 Output and effect
+
+| ID | Pri | Requirement |
+|---|---|---|
+| COMP-011 | M | Users shall record **finished compost** taken out of a system: date, quantity, and where it went — which shall be able to be a garden bed, closing the loop into GARD as a recorded input rather than a note (INT-011). |
+| COMP-012 | M | Composting shall record its **own emissions** honestly through the shared factor library: a pile is not emission-free, and the module shall never present it as though it were. |
+| COMP-013 | M | The system shall report the **avoided landfill emissions** of what was composted rather than binned, computed against the landfill counterfactual and shown separately from the footprint. It shall never be summed into the household total (GHG-034). |
+| COMP-014 | S | The avoided figure shall be presented at both greenhouse gas horizons, because the case for composting is substantially stronger over twenty years than over a hundred, and hiding that is a distortion (GHG-033). |
+| COMP-015 | S | Compost taken to a bed shall carry an estimated **displaced cost** — what the equivalent bought compost would have cost — into the garden's net position. |
+
+---
+
+## 15. Module: Circular Economy — Repair, Reuse, Repurpose
+
+Every other module in this system records consumption. This one records the opposite: the
+things that did not have to be bought because something already owned was fixed, adapted,
+borrowed, or passed on.
+
+It exists because that work is invisible by default. A repaired dishwasher shows up in the
+record as an afternoon and forty pounds of parts; the eight hundred pounds and three
+hundred kilograms of embodied carbon that were *not* spent leave no trace at all. A system
+that only records what was spent will always make replacing look cheaper than it was.
+
+### 15.1 Repair
+
+| ID | Pri | Requirement |
+|---|---|---|
+| CIRC-001 | M | Users shall log a **repair** against any asset, tool, stored item or free-text object: date, what failed, what was done, parts cost, time taken, who did it (household member or contact), and the outcome — fixed, partly fixed, failed, or replaced anyway. A failed repair is worth recording; it is why you replaced the thing. |
+| CIRC-002 | M | A repair shall attach its cost to the thing repaired through the shared ledger, exactly as maintenance does, and appear in that thing's history and cost of ownership (INT-005). |
+| CIRC-003 | M | A successful repair shall record an **extended life** in years, and shall push the thing's expected replacement date out by that much, so the ten-year financial forecast reflects it (INT-012). |
+| CIRC-004 | M | The system shall compute the repair's **avoided replacement**: the cost and the embodied emissions of the new item that was not bought, from the asset's replacement estimate and the factor library. Reported as a counterfactual, never summed into the footprint (GHG-034). |
+| CIRC-005 | S | The system shall offer a **repair-or-replace** comparison for an asset: repair cost against remaining life, versus replacement cost plus embodied carbon, plus any difference in running cost and emissions where the replacement is more efficient. It shall state plainly which inputs are measured and which are assumed. |
+| CIRC-006 | S | Repairs shall record the **parts** used, drawing on the product catalogue and stock where possible, and shall be able to raise a shopping line for a part not held (INT-003). |
+| CIRC-007 | C | Users shall attach a repair manual, a parts diagram or a photograph to a repair, and find it again from the asset. |
+
+### 15.2 Keeping things in circulation
+
+| ID | Pri | Requirement |
+|---|---|---|
+| CIRC-008 | M | Users shall log a **circulation event** of kind: repurposed, given away, received, sold, swapped, salvaged, refilled, borrowed or lent, against an item or free text, with date, counterparty where relevant, and value. |
+| CIRC-009 | M | Lending and borrowing shall reuse the existing tool and storage loan records rather than duplicating them; a loan shall appear in the circularity record without being entered twice (INT-013). |
+| CIRC-010 | S | Items sent to the declutter queue shall be able to leave by a recorded route — sold, given, donated, recycled, binned — and the route shall determine the emission treatment, so giving a chair away and taking it to the tip are not recorded identically. |
+| CIRC-011 | S | Salvaged material kept for future use shall be storable as ordinary stored items with a salvaged origin, so the offcuts in the garage are findable when the next project needs them (INT-014). |
+| CIRC-012 | C | A project's materials list shall check the salvage stash and the declutter queue before recommending a purchase. |
+
+### 15.3 Seeds, the household's oldest circular economy
+
+| ID | Pri | Requirement |
+|---|---|---|
+| CIRC-013 | M | Users shall record **saved seed** as a seed lot whose origin is a specific planting in this garden, so the line from a plant to next year's sowing is a link and not a memory (INT-015). |
+| CIRC-014 | M | The system shall warn when seed is saved from a variety that is not open-pollinated, since seed saved from an F1 hybrid will not come true, and shall let the user proceed anyway. |
+| CIRC-015 | S | Users shall record seed **given, swapped or received**, with the counterparty, as a circulation event tied to the lot. |
+| CIRC-016 | C | The system shall report the household's **seed self-sufficiency**: what proportion of sowings came from saved or swapped seed rather than bought. |
+
+### 15.4 Reporting
+
+| ID | Pri | Requirement |
+|---|---|---|
+| CIRC-017 | M | The system shall report a **circularity summary** for a period: repairs made and their success rate, items kept in circulation by route, money not spent, and embodied emissions avoided — each figure traceable to the events behind it. |
+| CIRC-018 | S | Every avoided figure shall state its counterfactual in words. "Avoided" claims are the most abused number in carbon accounting, and an unexplained one is worse than none. |
+
+---
+
+## 16. Module: Food and Pantry
+
+### 16.1 Concepts
 
 - **Storage area** (pantry): a food-holding location: kitchen pantry, fridge, freezer, garage chest freezer, spice rack, bar. These are STOR locations flagged `holds_food`, with a temperature class (`ambient`, `refrigerated`, `frozen`).
 - **Product**: a catalogue entry for a kind of food: name, brand, barcode(s), category, default unit, package size, typical shelf life per temperature class, image, nutrition (optional), price history, preferred vendors, tags (vegan, gluten-free, cat-related).
@@ -551,7 +749,7 @@ transaction and one activity, recorded once.
 - **Recipe** (Should): ingredients (product refs with quantity), steps, servings, tags; supports "can I make this" against stock and "add missing to list".
 - **Meal plan** (Could): calendar of recipes/meals per day; generates a consolidated shopping list.
 
-### 13.2 Requirements
+### 16.2 Requirements
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -581,16 +779,16 @@ transaction and one activity, recorded once.
 
 ---
 
-## 14. Module: General Storage
+## 17. Module: General Storage
 
-### 14.1 Concepts
+### 17.1 Concepts
 
 - **Location** tree shared with ASSET (section 8), extended with containers (bins, totes, boxes, shelves, drawers, cabinets, pegboards, closets).
 - **Storage item**: a thing you own and want to find later that is not an asset, tool, or consumable stock: seasonal decorations, camping gear, spare parts, cables, keepsakes, documents-in-a-box, leftover renovation materials. Fields: name, description, category, quantity, location (container), photo(s), value (estimated, for insurance), purchase info, condition, tags, "keep until" review date, loan state.
 - **Label**: a printable code (QR + human-readable short code) for a location or container that opens the record when scanned.
 - **Loan**: an item lent to or borrowed from a person (CONT), with dates and return state.
 
-### 14.2 Requirements
+### 17.2 Requirements
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -612,18 +810,18 @@ transaction and one activity, recorded once.
 
 ---
 
-## 15. Module: Tools
+## 18. Module: Tools
 
 Tools share the asset base (they are durable items with make/model/purchase/warranty/location) but have tool-specific behaviour: consumables, batteries and chargers, calibration/sharpening, project usage, and loans.
 
-### 15.1 Concepts
+### 18.1 Concepts
 
 - **Tool**: a hand or power tool, machine, or measuring instrument. Types: `hand`, `power_corded`, `power_battery`, `pneumatic`, `garden`, `measuring`, `safety`, `other`.
 - **Battery platform**: a manufacturer battery ecosystem (DeWalt 20V MAX, Milwaukee M18, Ryobi ONE+). Batteries and chargers are tracked as tool-like records on a platform; tools declare their platform.
 - **Consumable spec**: what a tool eats (blade type/size, bit type, sandpaper grit/size, string trimmer line, oil). Matched to pantry/storage products for stock and reorder.
 - **Tool kit**: a named grouping (Drywall kit, Plumbing kit, Car kit) for checkout as a set.
 
-### 15.2 Requirements
+### 18.2 Requirements
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -644,16 +842,16 @@ Tools share the asset base (they are durable items with make/model/purchase/warr
 
 ---
 
-## 16. Module: Cat Health
+## 19. Module: Cat Health
 
-### 16.1 Concepts
+### 19.1 Concepts
 
 - **Pet**: a companion animal. Species-agnostic data model (`species`, `breed`, `sex`, `neutered`, `dob`, `microchip`, `colour/markings`, `photo`, `weight history`, `status` active/deceased/rehomed) with cat-specific defaults and templates. First release ships cat presets only.
 - **Health record types**: vaccination, medication (course or ongoing), preventive (flea/tick/worming), vet visit, procedure/surgery, lab result, condition/diagnosis, symptom observation, weight, dental, grooming, behaviour note, litter/elimination note.
 - **Care plan**: the pet's standing instructions: feeding schedule and amounts (linked products), medications with dose schedule, litter routine, environmental notes, emergency contacts, vet. Printable/shareable with a Limited-role house-sitter.
 - **Provider**: vet clinic, emergency vet, groomer, boarder, pet insurer (CONT contacts with a `pet_provider` type).
 
-### 16.2 Requirements
+### 19.2 Requirements
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -681,7 +879,7 @@ Tools share the asset base (they are durable items with make/model/purchase/warr
 
 ---
 
-## 17. Module: Contacts and Vendors
+## 20. Module: Contacts and Vendors
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -694,7 +892,7 @@ Tools share the asset base (they are durable items with make/model/purchase/warr
 
 ---
 
-## 18. Module: Documents and Attachments
+## 21. Module: Documents and Attachments
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -711,9 +909,9 @@ Tools share the asset base (they are durable items with make/model/purchase/warr
 
 ---
 
-## 19. Module: Dashboard, Notifications and Reminders
+## 22. Module: Dashboard, Notifications and Reminders
 
-### 19.1 Dashboard
+### 22.1 Dashboard
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -723,7 +921,7 @@ Tools share the asset base (they are durable items with make/model/purchase/warr
 | DASH-004 | S | A **weekly review** page shall summarise the past week (completed, spent, wasted food, new items) and the coming week, suitable for a Sunday planning session. |
 | DASH-005 | C | Widgets for a wall-mounted tablet/kiosk mode: large text, auto-refresh, limited-role kiosk login. |
 
-### 19.2 Notifications
+### 22.2 Notifications
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -738,25 +936,28 @@ Tools share the asset base (they are durable items with make/model/purchase/warr
 
 ---
 
-## 20. Module Integration Matrix
+## 23. Module Integration Matrix
 
 This is the heart of the product. Each cell describes the concrete link; `M/S/C` is the priority of that link.
 
-| From ↓ / To → | Tasks | Assets/Locations | Maintenance | Projects | Budget | Carbon | Food/Pantry | Storage | Tools | Cats | Contacts | Documents |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **Tasks** | — | Task can reference a location/asset (S) | Task instance is the due-work unit (M) | Project tasks (M) | Bill tasks (M) | Meter-reading tasks (S) | Shopping tasks (S) | Loan-return tasks (S) | Loan-return tasks (M) | Dose and appointment tasks (M) | Assignee may be a vendor (S) | Attachments (M) |
-| **Assets** |  | — | Plans and history per asset (M) | Project creates/updates assets on completion (S) | Purchase, repair and TCO (M) | Operating and embodied emissions; meters are assets (M) | Consumable specs → products (S) | Assets located in tree; shared tree (M) | Tools are assets (M) | — | Purchase vendor, installer (M) | Manuals, warranties, receipts (M) |
-| **Maintenance** |  |  | — | Plan can be "adopted" into a project (C) | Completion cost → transaction (M) | Refrigerant charge and recovery as scope 1 (S) | Consumables used → stock decrement (M) | Parts from storage (S) | Required tools, tool maintenance (M) | Pet monitoring plans reuse recurring engine (M) | Vendor-performed work (S) | Service invoices (M) |
-| **Projects** |  |  |  | — | Project budget, actuals, committed (M) | Embodied carbon of materials; interventions become projects (M) | Materials that are consumables (S) | Leftovers filed to storage (S) | Tools needed, checkout (M) | — | Quotes, contractors (M) | Plans, permits, photos (M) |
-| **Budget** |  |  |  |  | — | A paid utility bill is one transaction and one activity (M) | Grocery trips and price history (M) | Sale proceeds on disposal (S) | Tool purchases (M) | Per-pet costs (M) | Payees (M) | Receipts (M) |
-| **Carbon** |  |  |  |  |  | — | Embodied food carbon; wasted food is wasted carbon (M) | Disposal route decides the waste factor (S) | Tool fuel and consumables (C) | Pet food footprint beside pet cost (S) | Utility providers (S) | Factor sources (C) |
-| **Food/Pantry** |  |  |  |  |  |  | — | Food areas are storage locations (M) | Tool consumables use the product catalogue (M) | Pet food and meds as stock; run-out projection (M) | Preferred stores (S) | Product images (S) |
-| **Storage** |  |  |  |  |  |  |  | — | Tools live in the tree; labels shared (M) | Pet supplies (S) | Loans to people (S) | Item photos (M) |
-| **Tools** |  |  |  |  |  |  |  |  | — | — | Loans, repair shops (M) | Manuals (S) |
-| **Cats** |  |  |  |  |  |  |  |  |  | — | Vets, insurers, sitters (M) | Certificates, lab results (S) |
-| **Contacts** |  |  |  |  |  |  |  |  |  |  | — | Contracts, quotes (S) |
+| From ↓ / To → | Tasks | Assets/Locations | Maintenance | Projects | Budget | Carbon | Garden | Compost | Circular | Food/Pantry | Storage | Tools | Cats | Contacts | Documents |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Tasks** | — | Task can reference a location/asset (S) | Task instance is the due-work unit (M) | Project tasks (M) | Bill tasks (M) | Meter-reading tasks (S) | Sow, harden off, transplant and harvest tasks (M) | Turn reminders floating from the last actual turn (S) | Repair follow-up and warranty-check tasks (C) | Shopping tasks (S) | Loan-return tasks (S) | Loan-return tasks (M) | Dose and appointment tasks (M) | Assignee may be a vendor (S) | Attachments (M) |
+| **Assets** |  | — | Plans and history per asset (M) | Project creates/updates assets on completion (S) | Purchase, repair and TCO (M) | Operating and embodied emissions; meters are assets (M) | Beds sit in the location tree; a greenhouse is an asset (M) | A tumbler or bin is an asset in the tree (S) | A repair extends an asset's life and defers its replacement (M) | Consumable specs → products (S) | Assets located in tree; shared tree (M) | Tools are assets (M) | — | Purchase vendor, installer (M) | Manuals, warranties, receipts (M) |
+| **Maintenance** |  |  | — | Plan can be "adopted" into a project (C) | Completion cost → transaction (M) | Refrigerant charge and recovery as scope 1 (S) | Irrigation and greenhouse upkeep plans (C) | — | A repair is the maintenance that avoided a replacement (M) | Consumables used → stock decrement (M) | Parts from storage (S) | Required tools, tool maintenance (M) | Pet monitoring plans reuse recurring engine (M) | Vendor-performed work (S) | Service invoices (M) |
+| **Projects** |  |  |  | — | Project budget, actuals, committed (M) | Embodied carbon of materials; interventions become projects (M) | Building a bed or a polytunnel is a project (C) | Building a bay system is a project (C) | Salvage and the declutter queue checked before buying materials (S) | Materials that are consumables (S) | Leftovers filed to storage (S) | Tools needed, checkout (M) | — | Quotes, contractors (M) | Plans, permits, photos (M) |
+| **Budget** |  |  |  |  | — | A paid utility bill is one transaction and one activity (M) | Seed, soil and input costs against harvest value (M) | Displaced cost of compost not bought (S) | Money not spent because something was repaired (M) | Grocery trips and price history (M) | Sale proceeds on disposal (S) | Tool purchases (M) | Per-pet costs (M) | Payees (M) | Receipts (M) |
+| **Carbon** |  |  |  |  |  | — | Garden inputs emit; harvests displace bought produce (S) | The pile emits a little and avoids a great deal of methane (M) | Avoided embodied carbon of what was never bought (M) | Embodied food carbon; wasted food is wasted carbon (M) | Disposal route decides the waste factor (S) | Tool fuel and consumables (C) | Pet food footprint beside pet cost (S) | Utility providers (S) | Factor sources (C) |
+| **Garden** |  |  |  |  |  |  | — | Finished compost goes to a bed; spent plants feed the pile (M) | Saved seed closes the loop to next year's sowing (M) | Harvest enters the pantry as ordinary stock (M) | Seed lots live in the location tree (M) | Garden tools and their consumables (S) | — | Seed suppliers and nurseries (S) | Variety notes, garden photographs (S) |
+| **Compost** |  |  |  |  |  |  |  | — | Composting is a circulation route, not a disposal route (M) | Binning food offers the pile instead, in one action (M) | Systems live in the location tree (S) | — | — | Municipal collection as a counterparty (C) | — |
+| **Circular** |  |  |  |  |  |  |  |  | — | Refills and returnable containers (C) | Salvaged material is an ordinary stored item (S) | Existing tool loans already count as circulation (M) | — | Repair shops, swap partners, recipients (M) | Repair manuals and parts diagrams (S) |
+| **Food/Pantry** |  |  |  |  |  |  |  |  |  | — | Food areas are storage locations (M) | Tool consumables use the product catalogue (M) | Pet food and meds as stock; run-out projection (M) | Preferred stores (S) | Product images (S) |
+| **Storage** |  |  |  |  |  |  |  |  |  |  | — | Tools live in the tree; labels shared (M) | Pet supplies (S) | Loans to people (S) | Item photos (M) |
+| **Tools** |  |  |  |  |  |  |  |  |  |  |  | — | — | Loans, repair shops (M) | Manuals (S) |
+| **Cats** |  |  |  |  |  |  |  |  |  |  |  |  | — | Vets, insurers, sitters (M) | Certificates, lab results (S) |
+| **Contacts** |  |  |  |  |  |  |  |  |  |  |  |  |  | — | Contracts, quotes (S) |
 
-### 20.1 Integration requirements
+### 26.1 Integration requirements
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -768,14 +969,21 @@ This is the heart of the product. Each cell describes the concrete link; `M/S/C`
 | INT-007 | M | Money and emissions shall share **one attribution ledger**. An attribution links a measure (a transaction split, or an activity) to the entity it was for, so a single query answers what any asset, project or pet has cost *and* emitted. Adding a third measure later shall not require a third mechanism. |
 | INT-008 | M | Where one household event has both a price and a footprint — a utility bill, a grocery trip, a materials order — it shall be recorded once and produce both, never entered twice. |
 | INT-006 | S | A **"what do I need?"** computation shall be available on maintenance plans and projects: required tools (owned/available?), required consumables (in stock?), producing a shopping list and a tool wishlist in one action. |
+| INT-009 | M | A **harvest** shall be able to become pantry stock in one action, so home-grown and bought food are held, tracked, used and wasted through exactly the same machinery. |
+| INT-010 | M | Wasting food shall offer every **disposal route** the household actually has — bin, compost, animal — in one control, and the route chosen shall determine the stock movement, the compost input and the emission record together. |
+| INT-011 | M | Finished **compost applied to a bed** shall be recorded once and appear as an output of the pile and an input to the garden, with its displaced cost and emissions computed from that single record. |
+| INT-012 | M | A **repair** shall extend the repaired thing's expected life, and the long-range financial forecast shall reflect the deferred replacement without further entry (BUD-030). |
+| INT-013 | M | Circulation shall **not duplicate** records that already exist. Tool and storage loans, declutter disposals and compost inputs are circulation events by virtue of what they are, and shall be reported as such from their own records. |
+| INT-014 | S | **Salvaged material** shall be stored, found and consumed as an ordinary stored item, so a project's materials list can see it. |
+| INT-015 | M | A **seed lot saved from a planting** shall link to that planting, and a planting sown from that lot shall link back, so the cycle is a traversable chain across seasons rather than a note. |
 
 ---
 
-## 21. Data Model
+## 24. Data Model
 
 This section lists entities, key fields and relationships. Types: `id` = ULID/UUID; `ts` = UTC timestamp; `date` = calendar date; `money` = integer minor units + currency; `json` = structured JSON.
 
-### 21.1 Platform
+### 24.1 Platform
 
 | Entity | Key fields |
 |---|---|
@@ -799,7 +1007,7 @@ This section lists entities, key fields and relationships. Types: `id` = ULID/UU
 | `attachment` | id, file_id, entity_type, entity_id, doc_type, title, description, sort |
 | `label_code` | id, code, entity_type, entity_id, assigned_at |
 
-### 21.2 Tasks
+### 24.2 Tasks
 
 | Entity | Key fields |
 |---|---|
@@ -815,7 +1023,7 @@ This section lists entities, key fields and relationships. Types: `id` = ULID/UU
 | `automation_rule` | id, board_id, trigger(json), action(json), active |
 | `time_entry` | id, task_id, user_id, started_at, ended_at, minutes, note |
 
-### 21.3 Registry
+### 24.3 Registry
 
 | Entity | Key fields |
 |---|---|
@@ -827,7 +1035,7 @@ This section lists entities, key fields and relationships. Types: `id` = ULID/UU
 | `warranty` | id, asset_id, provider_contact_id, type, start_date, end_date, coverage_md, cost_transaction_id |
 | `reading` | id, asset_id, metric, value, unit, taken_at, note |
 
-### 21.4 Maintenance
+### 24.4 Maintenance
 
 | Entity | Key fields |
 |---|---|
@@ -838,7 +1046,7 @@ This section lists entities, key fields and relationships. Types: `id` = ULID/UU
 | `maintenance_consumption` | record_id, product_id, stock_item_id, quantity |
 | `maintenance_template` | id, category_id, title, rrule, mode, description_md, checklist(json), consumables(json), tools(json) |
 
-### 21.5 Projects
+### 24.5 Projects
 
 | Entity | Key fields |
 |---|---|
@@ -855,7 +1063,7 @@ This section lists entities, key fields and relationships. Types: `id` = ULID/UU
 | `decision` | id, project_id, decided_at, title, rationale_md, alternatives_md, decided_by |
 | `project_template` | id, name, phases(json), tasks(json), materials(json), permits(json) |
 
-### 21.6 Budget
+### 24.6 Budget
 
 | Entity | Key fields |
 |---|---|
@@ -873,13 +1081,15 @@ This section lists entities, key fields and relationships. Types: `id` = ULID/UU
 | `goal_contribution` | goal_id, transaction_id |
 | `import_profile` | id, name, mapping(json) |
 
-### 21.7 Greenhouse gas and energy
+### 24.7 Greenhouse gas and energy
 
 | Entity | Key fields |
 |---|---|
-| `emission_factor` | id, key, name, category, activity_unit, kg_per_unit, scope(1/2/3), region, valid_from, valid_to, source, confidence(high/medium/low), notes, is_default, archived |
+| `greenhouse_gas` | key(co2/ch4_fossil/ch4_bio/n2o/r410a…), name, formula, gwp_100, gwp_20, assessment(AR5/AR6), lifetime_years, is_biogenic, notes |
+| `emission_factor` | id, key, name, category, activity_unit, kg_per_unit (CO₂e, derived), gases (json: kg of each gas per unit, null when the source gives only CO₂e), scope(1/2/3), region, valid_from, valid_to, source, confidence(high/medium/low), notes, is_default, archived |
 | `activity` | id, property_id, location_id, type, amount, unit, occurred_on, note, transaction_id, source_type, source_id, reading_id, created_by |
-| `emission` | id, activity_id, factor_id, factor_kg_per_unit (snapshot), quantity_in_factor_unit, g_co2e (integer), scope, category |
+| `emission` | id, activity_id, factor_id, factor_kg_per_unit (snapshot), quantity_in_factor_unit, **gas**, **g_mass** (grams of the gas itself), **gwp** (snapshot), **gwp_horizon**(100/20), g_co2e (integer, derived), scope, category — one row per gas |
+| `avoided_emission` | id, source_type, source_id, counterfactual (text), g_co2e_100, g_co2e_20, basis, occurred_on — reported separately, never summed into the footprint (GHG-038) |
 | `attribution` | id, source_kind(split/activity), source_id, entity_type, entity_id — **shared with the budget module** (INT-007) |
 | `meter` | asset_id, kind(electricity/gas/water/oil/odometer), unit, factor_key, multiplier, rollover_at, installed_on, replaced_meter_id |
 | `carbon_target` | id, period(YYYY or YYYY-MM), g_co2e, note |
@@ -892,7 +1102,41 @@ silently rewrites last year. `attribution` replaces the earlier `split_attributi
 same table now carries both measures, which is what makes a combined per-entity footprint
 a single query rather than two subsystems that happen to agree.
 
-### 21.8 Food and consumables
+An emission stores the **mass of the actual gas** as well as the CO₂e derived from it, and
+snapshots the global warming potential and horizon used. That is what makes a different
+horizon a re-reading of the same record rather than a rewrite of it: viewing a year at 20
+years recomputes from `g_mass` and touches nothing. A factor with no published gas split
+records a single row against the pseudo-gas `co2e`, which is honest about being a mixture
+rather than pretending to a composition nobody measured.
+
+### 24.8 Garden, compost and circulation
+
+| Entity | Key fields |
+|---|---|
+| `bed` | id, property_id, location_id, name, method(raised/in_ground/container/greenhouse/polytunnel), area_sqft, sun, irrigation, soil_notes, active_from, active_to |
+| `soil_test` | id, bed_id, taken_on, ph, n, p, k, organic_matter_pct, lab, notes |
+| `plant_variety` | id, name, cultivar, family, species, days_to_maturity, sow_depth_in, spacing_in, sun, frost_hardy, perennial, open_pollinated, seed_viability_years, sow_window(json), emission_factor_key, notes, is_default |
+| `seed_lot` | id, variety_id, origin(bought/saved/swapped/gifted/library), supplier_contact_id, saved_from_planting_id, quantity, unit, year_packed, location_id, cost, germination_rate, tested_on, notes |
+| `planting` | id, variety_id, bed_id, seed_lot_id, method(direct/indoor/transplant), sown_on, started_on, transplanted_on, expected_harvest_on, quantity, status, removed_on, failure_reason, notes |
+| `harvest` | id, planting_id, harvested_on, quantity, unit, quality, stock_item_id, est_value, value_basis |
+| `garden_observation` | id, planting_id, bed_id, observed_on, kind(pest/disease/weather/note), text |
+| `compost_system` | id, name, method(hot_pile/cold_pile/tumbler/worm/bokashi/trench/municipal), location_id, capacity, capacity_unit, active_from, status |
+| `compost_material` | key, name, cn_ratio, kind(green/brown), moisture, acceptable, source, notes |
+| `compost_input` | id, system_id, material_key, quantity, unit, occurred_on, source_type, source_id, cn_ratio (snapshot) |
+| `compost_event` | id, system_id, kind(turned/watered/temperature/harvested), occurred_on, temperature_f, moisture, note |
+| `compost_output` | id, system_id, occurred_on, quantity, unit, bed_id, est_value |
+| `repair` | id, target_type, target_id, target_text, occurred_on, symptom, work_done, parts_cost, time_min, by_user_id, by_contact_id, outcome(fixed/partial/failed/replaced), extended_life_years, avoided_cost, avoided_g_co2e, notes |
+| `circulation_event` | id, kind(repurposed/given/received/sold/swapped/salvaged/refilled/borrowed/lent/composted), item_type, item_id, item_text, occurred_on, contact_id, value, avoided_g_co2e, note |
+
+**Rules.** A `seed_lot` whose origin is `saved` names the `planting` it came from, and a
+`planting` names the `seed_lot` it was sown from; together those two columns are the
+household's seed cycle, traversable in both directions across seasons (INT-015). Harvests
+and compost outputs create rows in other modules (`stock_item`, garden inputs) rather than
+copies of them. Circulation is largely *derived*: a tool loan, a declutter disposal and a
+compost input are already circulation events by virtue of what they are, and are reported
+from their own records rather than duplicated into `circulation_event` (INT-013).
+
+### 24.9 Food and consumables
 
 | Entity | Key fields |
 |---|---|
@@ -908,7 +1152,7 @@ a single query rather than two subsystems that happen to agree.
 | `meal_plan_entry` | id, date, slot, recipe_id?, text |
 | `waste_log` | id, stock_item_id, quantity, reason, ts, est_cost |
 
-### 21.9 Storage and tools
+### 24.10 Storage and tools
 
 | Entity | Key fields |
 |---|---|
@@ -923,7 +1167,7 @@ a single query rather than two subsystems that happen to agree.
 | `tool_kit` | id, name; `tool_kit_member` (kit_id, asset_id) |
 | `tool_usage` | id, asset_id, project_id?, task_id?, ts, hours, note |
 
-### 21.10 Pets
+### 24.11 Pets
 
 | Entity | Key fields |
 |---|---|
@@ -941,14 +1185,14 @@ a single query rather than two subsystems that happen to agree.
 | `pet_insurance` | id, pet_id, insurer_contact_id, policy_number, premium_bill_id, deductible, notes_md |
 | `pet_claim` | id, insurance_id, visit_id, claimed_amount, reimbursed_transaction_id, status |
 
-### 21.11 Contacts
+### 24.12 Contacts
 
 | Entity | Key fields |
 |---|---|
 | `contact` | id, name, type, phones(json), email, website, address(json), notes_md, rating, preferred, specialties(json) |
 | `service_account` | id, contact_id, kind, account_number(enc), emergency_phone, recurring_bill_id |
 
-### 21.12 Referential rules
+### 24.13 Referential rules
 
 - All foreign keys `ON DELETE RESTRICT` except join tables and child rows owned by the parent (`ON DELETE CASCADE`).
 - `entity_type` discriminators are validated by an application-level registry; the registry is the single source of truth for which types may link to which.
@@ -956,7 +1200,7 @@ a single query rather than two subsystems that happen to agree.
 
 ---
 
-## 22. API Requirements
+## 25. API Requirements
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -973,7 +1217,7 @@ a single query rather than two subsystems that happen to agree.
 
 ---
 
-## 23. User Experience Requirements
+## 26. User Experience Requirements
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -994,7 +1238,7 @@ a single query rather than two subsystems that happen to agree.
 
 ---
 
-## 24. Non-Functional Requirements
+## 27. Non-Functional Requirements
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -1008,13 +1252,13 @@ a single query rather than two subsystems that happen to agree.
 | NFR-008 | M | **Portability**: runs on linux/amd64 and linux/arm64 (Raspberry Pi 4/5, Apple-silicon Docker). |
 | NFR-009 | M | **Observability**: structured JSON logs with request IDs; `/healthz` and `/readyz`; optional Prometheus `/metrics`. |
 | NFR-010 | S | **Upgradability**: forward-only migrations; every release documents breaking changes; a pre-upgrade automatic backup is taken. |
-| NFR-011 | M | **Testability**: unit tests for domain logic (recurrence, budgeting math, stock math), integration tests for API, E2E smoke tests for critical flows (see section 29). |
+| NFR-011 | M | **Testability**: unit tests for domain logic (recurrence, budgeting math, stock math), integration tests for API, E2E smoke tests for critical flows (see section 32). |
 | NFR-012 | S | **Maintainability**: modular monolith with module boundaries enforced by lint rules; a CONTRIBUTING guide; ADRs for major decisions. |
-| NFR-013 | M | **Licensing**: all dependencies OSI-approved and compatible with the project's chosen licence (recommend AGPL-3.0 or MIT; decision in section 31). |
+| NFR-013 | M | **Licensing**: all dependencies OSI-approved and compatible with the project's chosen licence (recommend AGPL-3.0 or MIT; decision in section 34). |
 
 ---
 
-## 25. Self-Hosting, Deployment and Operations
+## 28. Self-Hosting, Deployment and Operations
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -1037,7 +1281,7 @@ a single query rather than two subsystems that happen to agree.
 
 ---
 
-## 26. Security and Privacy
+## 29. Security and Privacy
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -1055,11 +1299,11 @@ a single query rather than two subsystems that happen to agree.
 
 ---
 
-## 27. Recommended Technical Architecture
+## 30. Recommended Technical Architecture
 
 This section is a recommendation, not a requirement, to make implementation estimates concrete. The existing repository is a Create React App project (React 17, `react-beautiful-dnd`, `react-hook-form`) with no backend. Both CRA and `react-beautiful-dnd` are unmaintained; the recommendation is to **retire the CRA scaffold and rebuild** while reusing the board concepts and demo data shapes.
 
-### 27.1 Stack
+### 30.1 Stack
 
 | Layer | Choice | Rationale |
 |---|---|---|
@@ -1079,7 +1323,7 @@ This section is a recommendation, not a requirement, to make implementation esti
 | Tests | Vitest (unit/integration), Playwright (E2E) | Playwright is pre-installed in the target dev environment. |
 | Packaging | Single Dockerfile (multi-stage), `docker compose` reference, GHCR multi-arch build via GitHub Actions | OPS-001/002. |
 
-### 27.2 Repository layout (proposed monorepo)
+### 30.2 Repository layout (proposed monorepo)
 
 ```
 /apps
@@ -1094,13 +1338,13 @@ This section is a recommendation, not a requirement, to make implementation esti
 /deploy          Dockerfile, docker-compose.yml, reverse-proxy examples
 ```
 
-### 27.3 Module structure (server)
+### 30.3 Module structure (server)
 
 Each module exposes: `routes.ts` (HTTP), `service.ts` (domain logic), `repo.ts` (data access), `events.ts` (published/handled domain events), `schema.ts` (Drizzle tables), and `seeds.ts` (default data). Cross-module calls go through the service layer or events only; a lint rule forbids importing another module's `repo`.
 
 ---
 
-## 28. Delivery Plan and Milestones
+## 31. Delivery Plan and Milestones
 
 Each milestone is independently useful and shippable. Priorities marked M in a module are required for that module's milestone; S items are included where the milestone note says so.
 
@@ -1112,15 +1356,15 @@ Each milestone is independently useful and shippable. Priorities marked M in a m
 | **M3 — Food, Storage, Labels** | Product catalogue, stock, scanning, expiry, par levels, shopping lists (live), put-away, price history (S), waste log (S), storage items, container views, labels/QR, loans (S). | Restock session of 20 scanned items in under 3 minutes on a phone; "where is X" finds a labelled bin; expiring-food digest arrives. |
 | **M4 — Tools and Projects** | Tool profiles, battery platforms, consumable specs, loans, kits (S); projects with phases, tasks, materials, tools-needed, budget rollup, quotes, photos, permits (S), decisions (S), templates (S), Gantt (S). | A sample bathroom remodel template runs end to end with budget actuals from transactions and tool checkout. |
 | **M5 — Cat Health** | Pet profiles, vaccinations, medications with dose tasks, preventives, visits, weight, journal, conditions, care sheet with Limited-role sharing, diet with pantry run-out, costs, insurance (S), lab results (S). | Twice-daily medication generates dose tasks with push notifications and missed-dose flags; care sheet viewable by a house-sitter account and nothing else. |
-| **M6 — Polish and Integrations** | Web push, ntfy/Gotify/webhooks, OIDC, PostgreSQL backend, ICS feeds, SSE live updates, weekly review, long-range planning view, importers (Grocy/HomeBox/YNAB), PWA offline writes, custom fields, saved views, automations. | All S-priority cross-module links in section 20 implemented; performance targets in NFR-001 met on the reference host. |
+| **M6 — Polish and Integrations** | Web push, ntfy/Gotify/webhooks, OIDC, PostgreSQL backend, ICS feeds, SSE live updates, weekly review, long-range planning view, importers (Grocy/HomeBox/YNAB), PWA offline writes, custom fields, saved views, automations. | All S-priority cross-module links in section 23 implemented; performance targets in NFR-001 met on the reference host. |
 
 Estimated relative effort (for credit planning): M0 15%, M1 15%, M2 15%, M3 17%, M4 15%, M5 13%, M6 10%.
 
 ---
 
-## 29. Acceptance Criteria and Test Strategy
+## 32. Acceptance Criteria and Test Strategy
 
-### 29.1 Test layers
+### 32.1 Test layers
 
 | Layer | Tooling | Coverage expectation |
 |---|---|---|
@@ -1132,13 +1376,13 @@ Estimated relative effort (for credit planning): M0 15%, M1 15%, M2 15%, M3 17%,
 | Performance | k6 or autocannon in CI (nightly) | NFR-001 dataset seeded; p95 assertions. |
 | Security | CI | Dependency audit, container scan, CSP header test, upload sanitisation tests. |
 
-### 29.2 Definition of done (per requirement)
+### 32.2 Definition of done (per requirement)
 
 A requirement is done when: the behaviour is implemented behind the documented API and UI; unit/integration tests cover it; it is documented in the user manual; it works on SQLite (and Postgres if M6 is reached); and it is demonstrated in demo mode data.
 
 ---
 
-## 30. Risks and Mitigations
+## 33. Risks and Mitigations
 
 | Risk | Impact | Mitigation |
 |---|---|---|
@@ -1153,7 +1397,7 @@ A requirement is done when: the behaviour is implemented behind the documented A
 
 ---
 
-## 31. Open Questions and Assumptions
+## 34. Open Questions and Assumptions
 
 | # | Question | Working assumption |
 |---|---|---|
@@ -1170,18 +1414,25 @@ A requirement is done when: the behaviour is implemented behind the documented A
 
 ---
 
-## 32. Glossary
+## 35. Glossary
 
 | Term | Definition |
 |---|---|
+| Activity | A household event with a physical quantity: kWh used, litres burned, kilograms bought or binned. The input to an emission. |
 | Asset | A durable, trackable item with a lifecycle (appliance, system, fixture, tool). |
-| Attribution | The link from a transaction split to the household entity the money was for. |
+| Attribution | The link from a measure — a transaction split or an activity — to the entity it was for. |
+| Avoided emissions | What a counterfactual would have emitted and this household did not: landfill methane avoided by composting, the manufacture avoided by a repair. Reported separately and never netted against the footprint. |
+| Bed | A defined growing area with a history: raised, in-ground, container or under cover. |
+| Biogenic carbon | Carbon that was recently in the atmosphere and was taken up by a plant. Its combustion or decay is accounted on the non-CO₂ gases, not counted again as CO₂. |
+| C:N ratio | Carbon to nitrogen, the balance that decides whether a compost pile works. Roughly 25–30:1 by mass. |
 | Care sheet | The printable summary of a pet's daily care instructions. |
 | Container | A location of type bin/box/shelf/drawer that holds items. |
-| Activity | A household event with a physical quantity: kWh used, litres burned, kilograms bought or binned. The input to an emission. |
-| Attribution | The link from a measure — a transaction split or an activity — to the entity it was for. |
-| Emission factor | Kilograms of CO₂e per unit of activity, with a source, a region and a validity period. |
+| CO₂e | Carbon dioxide equivalent: a mass of gas multiplied by its global warming potential, so different gases can be added together. A convenience, and always relative to a horizon. |
+| Emission factor | The coefficient turning an activity into emissions, expressed either as a vector of gases per unit or as a single CO₂e figure, with a source, a region and a validity period. |
 | Embodied carbon | Emissions from making and delivering a thing, counted when it is bought, as opposed to emissions from running it. |
+| GWP / horizon | Global warming potential: how much a gas warms relative to CO₂ over a stated period. Methane's is about 30 over 100 years and about 80 over 20, which is why the horizon has to be stated. |
+| Open-pollinated | A variety whose saved seed grows true to type. Seed saved from an F1 hybrid does not. |
+| Planting | A variety put in a bed on a date, with its own dates, tasks and harvests. |
 | Fixed schedule | Recurrence anchored to the calendar regardless of completion date. |
 | Floating schedule | Recurrence anchored to the last completion date. |
 | Lot / stock item | A physical quantity of a product in a specific location with its own expiry. |
@@ -1190,9 +1441,11 @@ A requirement is done when: the behaviour is implemented behind the documented A
 | Product | A catalogue entry for a kind of consumable (food or non-food). |
 | Property | A building or parcel owned or managed by the household. |
 | Reading | A dated numeric measurement against an asset. A meter reading becomes consumption by differencing. |
+| Seed lot | A quantity of seed of one variety with an origin, a packing year and a viability. Stock, held in the location tree like anything else. |
 | Scope 1 / 2 / 3 | Direct combustion and leakage on the property / purchased electricity / everything else, embodied or indirect. |
 | Split | One line of a transaction with its own amount, category and attribution. |
 | Task instance | A concrete task row, possibly generated from a schedule. |
+| Variety | A cultivar in the plant catalogue, carrying its botanical family so that rotation can be checked. |
 
 ---
 
@@ -1209,7 +1462,10 @@ Counts by area and priority (Must / Should / Could / Won't):
 | MAINT | 9 | 5 | 2 | 0 | 16 |
 | RENO | 10 | 7 | 2 | 0 | 19 |
 | BUD | 11 | 10 | 2 | 0 | 23 |
-| GHG | 15 | 11 | 3 | 1 | 30 |
+| GHG | 21 | 14 | 4 | 1 | 40 |
+| GARD | 12 | 10 | 2 | 0 | 24 |
+| COMP | 8 | 5 | 2 | 0 | 15 |
+| CIRC | 9 | 6 | 3 | 0 | 18 |
 | FOOD | 13 | 7 | 3 | 0 | 23 |
 | STOR | 7 | 6 | 2 | 0 | 15 |
 | TOOL | 7 | 5 | 2 | 0 | 14 |
@@ -1217,13 +1473,13 @@ Counts by area and priority (Must / Should / Could / Won't):
 | CONT | 3 | 2 | 1 | 0 | 6 |
 | DOC | 6 | 3 | 1 | 0 | 10 |
 | DASH | 7 | 4 | 2 | 0 | 13 |
-| INT | 6 | 2 | 0 | 0 | 8 |
+| INT | 12 | 3 | 0 | 0 | 15 |
 | API | 6 | 3 | 1 | 0 | 10 |
 | UX | 9 | 4 | 1 | 0 | 14 |
 | NFR | 11 | 2 | 0 | 0 | 13 |
 | OPS | 12 | 4 | 0 | 0 | 16 |
 | SEC | 9 | 2 | 0 | 0 | 11 |
-| **Total** | **194** | **101** | **30** | **2** | **327** |
+| **Total** | **235** | **126** | **38** | **2** | **401** |
 
 ---
 
@@ -1347,3 +1603,56 @@ and 1.9 t of embodied carbon. That is a carbon payback of roughly two months and
 about $103 per tonne abated, and the app says plainly which numbers are measured and which
 are assumed. Accepting it creates a project in the backlog carrying both the cost and the
 expected saving, so it appears in the ten-year plan next to the roof.
+
+**C.7 A tomato, from seed to seed (Garden + Circular + Pantry + Storage).**
+In February the seed drawer holds a lot of 'Amish Paste' saved from a plant in Bed 2 two
+summers ago, 34 seeds, germination tested at 88% last autumn. Matt starts twelve indoors;
+the lot drops to 22 and the planting appears with its own tasks, dated from the variety's
+80 days to maturity and the property's 12 May last frost: harden off 8 May, transplant
+18 May, first harvest expected 6 August.
+
+Sowing into Bed 2 raises a rotation warning — Solanaceae were there last season — so the
+planting goes to Bed 4 instead. Through August 31 pounds are harvested across nine
+pickings; each one enters the pantry as ordinary stock with an expiry, and carries an
+estimated value of $2.80 a pound taken from what the household actually paid for tomatoes
+last year. In September the best plant is left to over-ripen and its seed is saved: a new
+lot, origin `saved`, pointing at the planting it came from. The variety is open-pollinated,
+so no warning is raised. In October the spent vines go to the hot pile as a compost input.
+
+The chain is now traversable in both directions. From the new seed lot: the planting it
+came from, the bed it grew in, the lot *that* was sown, and the planting before it. Two
+summers of provenance, and not a note anywhere.
+
+**C.8 Methane, and why the horizon matters (Compost + Carbon + Food).**
+Over a year the household bins 180 kg of food waste and composts 240 kg. Both are recorded
+where they happen: binning from the pantry's waste action, composting from the same
+control with the pile chosen instead.
+
+The landfilled 180 kg produces mostly methane, and the pile produces mostly carbon dioxide
+with a little methane and nitrous oxide. Homestead stores the gases, not the equivalence.
+At the hundred-year horizon the landfill share of the household's waste footprint is 86%.
+Matt switches the report to twenty years — no data changes, the same stored gas masses are
+multiplied by different potentials — and it becomes 94%, because methane's twenty-year
+potential is nearly three times its hundred-year one.
+
+The avoided figure is reported beside the footprint and never inside it: composting 240 kg
+rather than binning it avoided 0.31 tCO₂e over a hundred years, or 0.83 t over twenty, and
+the counterfactual is stated in words underneath. The household's own footprint is
+unchanged by the avoidance, which is the point: what was avoided did not happen, and a
+system that nets it off would be telling a flattering lie.
+
+**C.9 The dishwasher that did not get replaced (Circular + Assets + Budget + Carbon).**
+The dishwasher stops draining in its ninth year. Matt logs a repair against the asset: a
+failed drain pump, $54 in parts, ninety minutes, fixed. He records four years of extended
+life.
+
+Three things follow from that single entry. The asset's expected replacement year moves
+from next year to 2031, and the ten-year forecast drops the $900 it had reserved. The
+repair cost joins the dishwasher's cost of ownership beside its purchase price and its
+maintenance. And the circularity report gains an avoided replacement: $900 not spent and
+about 340 kg of embodied carbon not manufactured — shown as a counterfactual, with the
+sentence "a new mid-range dishwasher, not bought" underneath it, and not subtracted from
+anything.
+
+Had the repair failed, the same record would say so, and the forecast would have kept its
+replacement where it was. The record is there to be useful rather than encouraging.

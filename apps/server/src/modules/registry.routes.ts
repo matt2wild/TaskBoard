@@ -205,11 +205,13 @@ export function registryRoutes(app: FastifyInstance): void {
       scope: () => eq(assets.kind, 'asset'),
       decorate: async (rows, ctx) => {
         const ids = rows.map((r) => r.id);
-        const [spend, carbon, paths, nextDue] = await Promise.all([
+        const { extendedLifeForMany } = await import('../services/circular.js');
+        const [spend, carbon, paths, nextDue, extended] = await Promise.all([
           spentOnMany(ctx, 'asset', ids),
           emittedByMany(ctx, 'asset', ids),
           locationPaths(ctx.db, rows.map((r) => r.locationId).filter(Boolean) as string[]),
           nextMaintenanceFor(ctx.db, ids),
+          extendedLifeForMany(ctx, 'asset', ids),
         ]);
         return rows.map((r) => ({
           ...r,
@@ -222,7 +224,8 @@ export function registryRoutes(app: FastifyInstance): void {
           maintenanceSpend: spend.get(r.id) ?? 0,
           gCo2e: carbon.get(r.id) ?? 0,
           nextMaintenanceDue: nextDue.get(r.id) ?? null,
-          replacementYear: estimateReplacementYear(r, ctx.today),
+          lifeExtendedYears: extended.get(r.id) ?? 0,
+          replacementYear: estimateReplacementYear(r, ctx.today, extended.get(r.id) ?? 0),
         }));
       },
     },
@@ -377,10 +380,15 @@ async function nextMaintenanceFor(db: any, assetIds: string[]): Promise<Map<stri
   return out;
 }
 
-/** Replacement planning from age and expected life (ASSET-009). */
-function estimateReplacementYear(asset: any, today: string): number | null {
+/**
+ * Replacement planning from age and expected life (ASSET-009), pushed out by
+ * whatever the recorded repairs bought. A repair that keeps a machine going for
+ * four more years should move the forecast by four years without anyone
+ * re-entering anything (INT-012, CIRC-003).
+ */
+function estimateReplacementYear(asset: any, today: string, extendedYears = 0): number | null {
   const start = asset.installedDate ?? asset.purchaseDate;
   if (!start || !asset.expectedLifespanYears) return null;
-  const year = Number(start.slice(0, 4)) + asset.expectedLifespanYears;
+  const year = Number(start.slice(0, 4)) + asset.expectedLifespanYears + Math.round(extendedYears);
   return year < Number(today.slice(0, 4)) ? Number(today.slice(0, 4)) : year;
 }

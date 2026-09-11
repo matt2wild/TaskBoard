@@ -3,19 +3,22 @@ import type { FastifyInstance } from 'fastify';
 import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import {
-  ACTIVITY_TYPES, ATTRIBUTABLE, FACTOR_CONFIDENCE, HEATING_SEASON_WEIGHTS,
-  SCOPE_LABELS, SCOPE_NOTES, addDays, monthlyPacing, parseCo2eInput,
+  ACTIVITY_TYPES, ATTRIBUTABLE, FACTOR_CONFIDENCE, GASES, HEATING_SEASON_WEIGHTS,
+  HORIZONS, SCOPE_LABELS, SCOPE_NOTES, addDays, isHorizonSensitive, monthlyPacing,
+  parseCo2eInput, vectorToKgCo2e,
 } from '@homestead/shared';
 import {
   activities, assets, attributions, carbonTargets, emissionFactors, emissions,
-  interventions, meters, properties,
+  greenhouseGases, interventions, meters, properties,
 } from '../db/schema.js';
 import { crudRoutes } from '../core/crud.js';
+import { invalidateHousehold } from '../core/ctx.js';
 import { requireAdmin, requireWrite } from '../core/auth.js';
 import { badRequest, notFound } from '../core/errors.js';
 import { resolveLabels } from '../core/registry.js';
 import {
-  activityFromReading, explain, footprint, ledgerFor, recordActivity, regionOf,
+  activityFromReading, avoidedBetween, explain, footprint, horizonOf, ledgerFor,
+  recordActivity, regionOf,
 } from '../services/carbon.js';
 import {
   acceptIntervention, candidateFromTemplate, electricityPricePerKwh, estimateIntervention,
@@ -36,6 +39,7 @@ export function carbonRoutes(app: FastifyInstance): void {
       category: z.string().trim().min(1),
       activityUnit: z.string().trim().min(1),
       kgPerUnit: z.number().min(0),
+      gases: z.record(z.number()).nullable().optional(),
       scope: z.number().int().min(1).max(3).default(3),
       region: z.string().nullable().optional(),
       validFrom: dateStr.nullable().optional(),
@@ -47,6 +51,7 @@ export function carbonRoutes(app: FastifyInstance): void {
     update: z.object({
       name: z.string().trim().min(1).optional(),
       kgPerUnit: z.number().min(0).optional(),
+      gases: z.record(z.number()).nullable().optional(),
       scope: z.number().int().min(1).max(3).optional(),
       region: z.string().nullable().optional(),
       validFrom: dateStr.nullable().optional(),
@@ -58,6 +63,39 @@ export function carbonRoutes(app: FastifyInstance): void {
     }),
     searchColumns: ['name', 'key', 'notes'],
     filterColumns: ['category', 'scope', 'region', 'archived', 'key'],
+    hooks: {
+      /**
+       * Correcting the headline CO₂e of a factor that carries a gas vector has
+       * to move the vector with it, or the correction would silently do
+       * nothing — the recording path reads the composition, not the headline.
+       * Scaling keeps the composition the source published and honours the
+       * household's own number, which is the behaviour a person correcting
+       * their grid factor expects.
+       */
+      beforeUpdate: async (values: any, before: any) => {
+        if (values.kgPerUnit == null || values.gases !== undefined) return values;
+        if (!before.gases || !before.kgPerUnit) return values;
+        const ratio = values.kgPerUnit / before.kgPerUnit;
+        if (!Number.isFinite(ratio) || ratio <= 0) return values;
+        const scaled: Record<string, number> = {};
+        for (const [gas, kg] of Object.entries(before.gases as Record<string, number>)) {
+          scaled[gas] = kg * ratio;
+        }
+        return { ...values, gases: scaled };
+      },
+      decorate: async (rows) => rows.map((r) => ({
+        ...r,
+        /** What it comes to over twenty years, where the composition allows it. */
+        kgPerUnit20: r.gases
+          ? Math.round(vectorToKgCo2e(r.gases as Record<string, number>, 20) * 1e4) / 1e4
+          : null,
+        gasList: r.gases
+          ? Object.entries(r.gases as Record<string, number>)
+            .map(([gas, kg]) => ({ gas, kg, name: GASES[gas]?.name ?? gas }))
+            .sort((a, b) => (GASES[b.gas]?.gwp100 ?? 1) * b.kg - (GASES[a.gas]?.gwp100 ?? 1) * a.kg)
+          : null,
+      })),
+    },
     sortColumns: ['category', 'name', 'kgPerUnit'],
     defaultSort: { column: 'category', dir: 'asc' },
   });
@@ -145,13 +183,15 @@ export function carbonRoutes(app: FastifyInstance): void {
   app.get('/api/v1/carbon/footprint', async (req) => {
     const q = z.object({
       from: dateStr.optional(), to: dateStr.optional(), year: yearStr.optional(),
+      horizon: z.coerce.number().int().optional(),
     }).parse(req.query);
     const from = q.year ? `${q.year}-01-01` : q.from ?? `${req.ctx.today.slice(0, 4)}-01-01`;
     const to = q.year ? `${q.year}-12-31` : q.to ?? req.ctx.today;
+    const horizon = q.horizon === 20 ? 20 : q.horizon === 100 ? 100 : horizonOf(req.ctx);
 
-    const current = await footprint(req.ctx, from, to);
+    const current = await footprint(req.ctx, from, to, { horizon });
     const priorYear = String(Number(from.slice(0, 4)) - 1);
-    const prior = await footprint(req.ctx, `${priorYear}-01-01`, `${priorYear}-12-31`);
+    const prior = await footprint(req.ctx, `${priorYear}-01-01`, `${priorYear}-12-31`, { horizon });
 
     const target = (await req.ctx.db.select().from(carbonTargets).where(and(
       eq(carbonTargets.period, from.slice(0, 4)), isNull(carbonTargets.deletedAt),
@@ -194,6 +234,23 @@ export function carbonRoutes(app: FastifyInstance): void {
         period: target.period, gCo2e: target.gCo2e,
         pct: target.gCo2e > 0 ? Math.round((current.total / target.gCo2e) * 100) : null,
       } : null,
+      gases: current.byGas.map((g) => ({
+        ...g,
+        name: GASES[g.gas]?.name ?? g.gas,
+        formula: GASES[g.gas]?.formula ?? null,
+        biogenic: GASES[g.gas]?.biogenic ?? false,
+        horizonSensitive: isHorizonSensitive(g.gas),
+      })),
+      /** What was avoided, kept apart from the footprint on purpose (GHG-038). */
+      avoided: await (async () => {
+        const a = await avoidedBetween(req.ctx, from, to);
+        return {
+          total: horizon === 20 ? a.total20 : a.total100,
+          total100: a.total100, total20: a.total20,
+          cost: a.cost, count: a.count, byCategory: a.byCategory,
+          note: 'Counterfactuals — what a landfill, a factory or a supermarket would have emitted instead. Never subtracted from the total above.',
+        };
+      })(),
       byEntity: attributed.map((a) => ({
         entityType: a.entityType, entityId: a.entityId,
         label: labels.get(`${a.entityType}:${a.entityId}`) ?? a.entityId,
@@ -205,6 +262,62 @@ export function carbonRoutes(app: FastifyInstance): void {
         perSqft: property?.areaSqft ? Math.round(current.total / property.areaSqft) : null,
         areaSqft: property?.areaSqft ?? null,
       },
+    };
+  });
+
+  /** The gas registry: what each gas is and what it is worth at each horizon. */
+  app.get('/api/v1/carbon/gases', async (req) => {
+    const rows = await req.ctx.db.select().from(greenhouseGases)
+      .where(isNull(greenhouseGases.deletedAt));
+    const used = await req.ctx.db.select({
+      gas: emissions.gas,
+      massMg: sql<number>`coalesce(sum(${emissions.massMg}), 0)`,
+      gCo2e: sql<number>`coalesce(sum(${emissions.gCo2e}), 0)`,
+    }).from(emissions).groupBy(emissions.gas);
+    const byKey = new Map(used.map((u) => [u.gas, u]));
+
+    return {
+      items: rows.map((g) => ({
+        ...g,
+        horizonRatio: g.gwp100 > 0 ? Math.round((g.gwp20 / g.gwp100) * 100) / 100 : 1,
+        recorded: byKey.get(g.key)
+          ? { massMg: Number(byKey.get(g.key)!.massMg), gCo2e: Number(byKey.get(g.key)!.gCo2e) }
+          : null,
+      })).sort((a, b) => b.gwp100 - a.gwp100),
+      horizons: HORIZONS,
+      horizon: horizonOf(req.ctx),
+    };
+  });
+
+  /**
+   * The horizon is an editorial decision rather than a technical one, so it is
+   * a household setting with a recorded reason (GHG-039). Changing it never
+   * alters what is stored — every report recomputes from the gas masses.
+   */
+  app.put('/api/v1/carbon/horizon', async (req) => {
+    requireAdmin(req.ctx.user);
+    const body = z.object({
+      horizon: z.union([z.literal(100), z.literal(20)]),
+      reason: z.string().nullable().optional(),
+    }).parse(req.body);
+    const { households } = await import('../db/schema.js');
+    const settings = {
+      ...(req.ctx.household.settings ?? {}),
+      gwpHorizon: body.horizon,
+      gwpHorizonReason: body.reason ?? null,
+    };
+    await req.ctx.db.update(households).set({ settings })
+      .where(eq(households.id, req.ctx.household.id));
+    // The household is cached per process; without this the new horizon would
+    // not take effect until a restart, which is the sort of silent no-op that
+    // makes a setting look broken.
+    invalidateHousehold();
+    return {
+      horizon: body.horizon,
+      reason: body.reason ?? null,
+      note: body.horizon === 20
+        ? 'Reporting over twenty years. Methane-heavy sources — landfill, gas leakage, ruminants — will look substantially larger, which is the point of the shorter horizon.'
+        : 'Reporting over a hundred years, the convention in most national inventories.',
     };
   });
 

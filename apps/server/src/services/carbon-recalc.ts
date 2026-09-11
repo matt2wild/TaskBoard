@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { and, eq, gte, inArray, isNull, lte } from 'drizzle-orm';
-import { applyFactor, resolveFactor, type Grams } from '@homestead/shared';
+import { applyFactorGases, resolveFactor, type Grams } from '@homestead/shared';
 import type { Ctx } from '../core/ctx.js';
 import { logActivity } from '../core/activity.js';
 import { activities, emissionFactors, emissions } from '../db/schema.js';
@@ -10,6 +10,7 @@ export interface RecalcLine {
   activityId: string;
   occurredOn: string;
   factorKey: string;
+  gas: string;
   was: Grams;
   now: Grams;
   wasFactor: number;
@@ -55,20 +56,34 @@ export async function recalculate(
         id: f.id, key: f.key, name: f.name, activityUnit: f.activityUnit,
         kgPerUnit: f.kgPerUnit, scope: f.scope as 1 | 2 | 3,
         region: f.region, validFrom: f.validFrom, validTo: f.validTo,
+        gases: f.gases ?? null,
       })),
       { on: row.a.occurredOn, region },
     );
     if (!chosen) { unchanged++; continue; }
 
-    let grams: number;
+    // An emission is one gas of one factor, so it has to be recomputed against
+    // that gas rather than against the factor's whole coefficient — applying
+    // the total to every gas row would multiply the activity by its own gas
+    // count, which is exactly the bug this shape is meant to prevent.
+    let applied: ReturnType<typeof applyFactorGases>;
     try {
-      ({ grams } = applyFactor(Math.abs(row.a.amount), row.a.unit, chosen));
+      applied = applyFactorGases(
+        Math.abs(row.a.amount), row.a.unit, chosen, row.e.gwpHorizon === 20 ? 20 : 100,
+      );
     } catch { unchanged++; continue; }
-    const signed = row.e.gCo2e < 0 ? -grams : grams;
+
+    const match = applied.gases.find((g) => g.gas === row.e.gas);
+    if (!match) { unchanged++; continue; }
+
+    const negative = row.e.gCo2e < 0;
+    const signed = negative ? -match.gCo2e : match.gCo2e;
+    const signedMass = negative ? -match.massMg : match.massMg;
 
     if (signed === row.e.gCo2e) { unchanged++; continue; }
     changed.push({
       activityId: row.a.id, occurredOn: row.a.occurredOn, factorKey: row.e.factorKey,
+      gas: row.e.gas,
       was: row.e.gCo2e, now: signed,
       wasFactor: row.e.factorKgPerUnit, nowFactor: chosen.kgPerUnit,
     });
@@ -77,6 +92,8 @@ export async function recalculate(
     if (apply) {
       await ctx.db.update(emissions).set({
         gCo2e: signed,
+        massMg: signedMass,
+        gwp: match.gwp,
         factorId: chosen.id,
         factorKgPerUnit: chosen.kgPerUnit,
         factorUnit: chosen.activityUnit,

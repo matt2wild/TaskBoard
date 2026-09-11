@@ -6,3 +6,7 @@ export * from './constants.js';
 export * from './api-types.js';
 export * from './rrule.js';
 export * from './carbon.js';
+export * from './gases.js';
+export * from './garden.js';
+export * from './compost.js';
+export * from './circular.js';

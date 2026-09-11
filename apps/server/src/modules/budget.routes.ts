@@ -683,10 +683,16 @@ export function budgetRoutes(app: FastifyInstance): void {
       bucket.items.push({ kind, label, amount });
       byYear.set(year, bucket);
     };
+    // A recorded repair bought years, and the forecast should show them
+    // rather than still reserving for a replacement that was deferred (INT-012).
+    const { extendedLifeForMany } = await import('../services/circular.js');
+    const extended = await extendedLifeForMany(req.ctx, 'asset', assetRows.map((a) => a.id));
     for (const a of assetRows) {
       const start = a.installedDate ?? a.purchaseDate;
       if (!start || !a.expectedLifespanYears) continue;
-      push(Number(start.slice(0, 4)) + a.expectedLifespanYears, 'asset_replacement', a.name,
+      const bought = Math.round(extended.get(a.id) ?? 0);
+      push(Number(start.slice(0, 4)) + a.expectedLifespanYears + bought, 'asset_replacement',
+        bought > 0 ? `${a.name} (deferred ${bought}y by repair)` : a.name,
         a.replacementCostEstimate ?? a.purchasePrice ?? 0);
     }
     for (const p of projectRows) {

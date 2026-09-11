@@ -2,10 +2,13 @@
 import { eq, sql } from 'drizzle-orm';
 import type { DB } from '../db/index.js';
 import {
-  assetCategories, categories, emissionFactors, interventionTemplates, maintenanceTemplates,
-  productCategories, projectTemplates, speciesProfiles, storageCategories,
+  assetCategories, categories, compostMaterials, emissionFactors, greenhouseGases,
+  interventionTemplates, maintenanceTemplates, plantVarieties, productCategories,
+  projectTemplates, speciesProfiles, storageCategories,
 } from '../db/schema.js';
+import { GASES } from '@homestead/shared';
 import { FACTOR_SEEDS, INTERVENTION_TEMPLATES, PRODUCT_CATEGORY_FACTORS } from './factors.js';
+import { COMPOST_MATERIAL_SEEDS, VARIETY_SEEDS } from './garden.js';
 
 /** Appendix B of the requirements, as data. Idempotent: safe on every boot. */
 
@@ -301,16 +304,62 @@ export async function seedDefaults(db: DB): Promise<{ seeded: string[] }> {
     seeded.push('productCategories');
   }
 
+  // The gas registry has to exist before any factor that references a gas.
+  if (await isEmpty(db, greenhouseGases)) {
+    for (const g of Object.values(GASES)) {
+      await db.insert(greenhouseGases).values({
+        key: g.key, name: g.name, formula: g.formula,
+        gwp100: g.gwp100, gwp20: g.gwp20, lifetimeYears: g.lifetimeYears,
+        isBiogenic: g.biogenic, kind: g.kind, source: g.source, notes: g.notes ?? null,
+      });
+    }
+    seeded.push('greenhouseGases');
+  }
+
   if (await isEmpty(db, emissionFactors)) {
     for (const f of FACTOR_SEEDS) {
       await db.insert(emissionFactors).values({
         key: f.key, name: f.name, category: f.category,
         activityUnit: f.activityUnit, kgPerUnit: f.kgPerUnit, scope: f.scope,
+        gases: f.gases ?? null,
         region: f.region ?? null, source: f.source, confidence: f.confidence,
         notes: f.notes ?? null, isDefault: true,
       });
     }
     seeded.push('emissionFactors');
+  }
+
+  if (await isEmpty(db, plantVarieties)) {
+    for (const v of VARIETY_SEEDS) {
+      await db.insert(plantVarieties).values({
+        name: v.name, cultivar: v.cultivar ?? null, family: v.family,
+        species: v.species ?? null, category: v.category,
+        daysToMaturity: v.daysToMaturity, sowDepthIn: v.sowDepthIn ?? null,
+        spacingIn: v.spacingIn ?? null, sun: v.sun ?? null,
+        frostHardy: v.frostHardy ?? false, perennial: v.perennial ?? false,
+        openPollinated: v.openPollinated ?? true,
+        seedViabilityYears: v.seedViabilityYears,
+        indoorWeeks: v.indoorWeeks ?? null,
+        sowWindow: v.sowWindow ?? null,
+        emissionFactorKey: v.emissionFactorKey ?? null,
+        typicalPrice: v.typicalPrice ?? null,
+        typicalPriceUnit: v.typicalPriceUnit ?? null,
+        yieldPerPlantLb: v.yieldPerPlantLb ?? null,
+        notes: v.notes ?? null, isDefault: true,
+      });
+    }
+    seeded.push('plantVarieties');
+  }
+
+  if (await isEmpty(db, compostMaterials)) {
+    for (const m of COMPOST_MATERIAL_SEEDS) {
+      await db.insert(compostMaterials).values({
+        key: m.key, name: m.name, cnRatio: m.cnRatio, kind: m.kind,
+        moisture: m.moisture ?? null, acceptable: m.acceptable ?? true,
+        caution: m.caution ?? null, source: m.source,
+      });
+    }
+    seeded.push('compostMaterials');
   }
 
   if (await isEmpty(db, interventionTemplates)) {

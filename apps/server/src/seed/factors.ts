@@ -20,18 +20,28 @@ export interface FactorSeed {
   source: string;
   confidence: 'high' | 'medium' | 'low';
   notes?: string;
+  /**
+   * Kilograms of each gas per activity unit, given only where the source
+   * genuinely publishes a composition (GHG-032). Most food and material
+   * figures are single CO₂e numbers and are left without one, which records
+   * them honestly as an unspecified mixture rather than inventing a split.
+   */
+  gases?: Record<string, number>;
 }
 
 const EPA = 'US EPA GHG Emission Factors Hub (approximate; verify for your region)';
 const PN = 'Poore & Nemecek (2018), Science — global medians, cradle to retail';
 const ICE = 'Inventory of Carbon and Energy, University of Bath (approximate)';
-const AR5 = 'IPCC AR5 GWP100';
+const AR6 = 'IPCC AR6 GWP, applied to the gas itself';
+const EPA_GAS = 'US EPA GHG Emission Factors Hub, per-gas combustion factors';
+const PN_GAS = 'Poore & Nemecek (2018) supplementary data — enteric split approximate';
 const DEFRA = 'UK DEFRA conversion factors (approximate)';
 
 export const FACTOR_SEEDS: FactorSeed[] = [
   /* ── electricity ── */
   { key: 'electricity.grid', name: 'Grid electricity', category: 'energy', activityUnit: 'kwh',
     kgPerUnit: 0.371, scope: 2, region: 'US', source: EPA, confidence: 'medium',
+    gases: { co2: 0.3689, ch4_fossil: 0.000030, n2o: 0.0000050 },
     notes: 'US national average. Regional grids range from under 0.05 to over 0.8 kg/kWh — correct this for where you live and the number becomes meaningful.' },
   { key: 'electricity.grid', name: 'Grid electricity (global default)', category: 'energy', activityUnit: 'kwh',
     kgPerUnit: 0.475, scope: 2, source: 'IEA global average (approximate)', confidence: 'low',
@@ -42,31 +52,42 @@ export const FACTOR_SEEDS: FactorSeed[] = [
 
   /* ── fuels burned here ── */
   { key: 'gas.combustion', name: 'Natural gas, burned', category: 'energy', activityUnit: 'therm',
-    kgPerUnit: 5.31, scope: 1, source: EPA, confidence: 'high' },
+    kgPerUnit: 5.31, scope: 1, source: EPA_GAS, confidence: 'high',
+    gases: { co2: 5.306, ch4_fossil: 0.0001, n2o: 0.00001 },
+    notes: 'Burning gas cleanly is almost all carbon dioxide. It is the gas that never reached the burner, upstream, that carries the methane.' },
   { key: 'gas.upstream', name: 'Natural gas, extraction and delivery', category: 'energy', activityUnit: 'therm',
-    kgPerUnit: 1.02, scope: 3, source: EPA, confidence: 'low',
-    notes: 'Methane leakage upstream of the meter. Estimates vary widely.' },
+    kgPerUnit: 1.02, scope: 3, source: EPA_GAS, confidence: 'low',
+    gases: { co2: 0.35, ch4_fossil: 0.0225 },
+    notes: 'Almost entirely methane that leaked before the meter, so this is the factor most sensitive to the horizon: it roughly doubles over twenty years. Leakage estimates vary widely — this is a middling one.' },
   { key: 'oil.combustion', name: 'Heating oil, burned', category: 'energy', activityUnit: 'gal',
-    kgPerUnit: 10.21, scope: 1, source: EPA, confidence: 'high', notes: 'No. 2 distillate.' },
+    kgPerUnit: 10.24, scope: 1, source: EPA_GAS, confidence: 'high',
+    gases: { co2: 10.21, ch4_fossil: 0.00042, n2o: 0.000083 },
+    notes: 'No. 2 distillate.' },
   { key: 'oil.upstream', name: 'Heating oil, refining and delivery', category: 'energy', activityUnit: 'gal',
-    kgPerUnit: 1.80, scope: 3, source: EPA, confidence: 'low' },
+    kgPerUnit: 1.80, scope: 3, source: EPA_GAS, confidence: 'low',
+    gases: { co2: 1.65, ch4_fossil: 0.005 } },
   { key: 'propane.combustion', name: 'Propane, burned', category: 'energy', activityUnit: 'gal',
-    kgPerUnit: 5.72, scope: 1, source: EPA, confidence: 'high' },
+    kgPerUnit: 5.74, scope: 1, source: EPA_GAS, confidence: 'high',
+    gases: { co2: 5.72, ch4_fossil: 0.00027, n2o: 0.000055 } },
   { key: 'propane.upstream', name: 'Propane, upstream', category: 'energy', activityUnit: 'gal',
     kgPerUnit: 0.80, scope: 3, source: EPA, confidence: 'low' },
   { key: 'wood.combustion', name: 'Firewood', category: 'energy', activityUnit: 'kg',
-    kgPerUnit: 0.05, scope: 1, source: DEFRA, confidence: 'low',
-    notes: 'Non-CO₂ combustion products and supply chain only. Biogenic CO₂ is excluded on the assumption the wood is sustainably harvested — an assumption worth checking.' },
+    kgPerUnit: 0.04, scope: 1, source: DEFRA, confidence: 'low',
+    gases: { ch4_bio: 0.001, n2o: 0.00005 },
+    notes: 'Only the non-CO₂ products of combustion. The carbon dioxide is biogenic — the tree took it out of the air on the way up — and counting it again on the way down would be double counting, on the assumption the wood is sustainably harvested. That assumption is worth checking (GHG-037).' },
   { key: 'district_heat.supply', name: 'District heat', category: 'energy', activityUnit: 'kwh',
     kgPerUnit: 0.17, scope: 2, source: DEFRA, confidence: 'low' },
 
   /* ── transport ── */
   { key: 'gasoline.combustion', name: 'Petrol, burned', category: 'transport', activityUnit: 'gal',
-    kgPerUnit: 8.78, scope: 1, source: EPA, confidence: 'high' },
+    kgPerUnit: 8.81, scope: 1, source: EPA_GAS, confidence: 'high',
+    gases: { co2: 8.78, ch4_fossil: 0.0003, n2o: 0.00008 },
+    notes: 'The non-CO₂ share depends heavily on the age and after-treatment of the engine; these are modern passenger-car figures.' },
   { key: 'gasoline.upstream', name: 'Petrol, refining and delivery', category: 'transport', activityUnit: 'gal',
     kgPerUnit: 2.32, scope: 3, source: EPA, confidence: 'low' },
   { key: 'diesel.combustion', name: 'Diesel, burned', category: 'transport', activityUnit: 'gal',
-    kgPerUnit: 10.21, scope: 1, source: EPA, confidence: 'high' },
+    kgPerUnit: 10.29, scope: 1, source: EPA_GAS, confidence: 'high',
+    gases: { co2: 10.21, ch4_fossil: 0.0003, n2o: 0.00025 } },
   { key: 'vehicle.car_petrol', name: 'Car, petrol', category: 'transport', activityUnit: 'mi',
     kgPerUnit: 0.404, scope: 1, source: EPA, confidence: 'medium',
     notes: 'Average US passenger vehicle. A specific car is better tracked by fuel bought.' },
@@ -78,44 +99,73 @@ export const FACTOR_SEEDS: FactorSeed[] = [
 
   /* ── water and waste ── */
   { key: 'water.supply', name: 'Mains water and treatment', category: 'water', activityUnit: 'm3',
-    kgPerUnit: 0.35, scope: 3, source: DEFRA, confidence: 'low' },
+    kgPerUnit: 0.35, scope: 3, source: DEFRA, confidence: 'low',
+    gases: { co2: 0.34, ch4_fossil: 0.0002 } },
   { key: 'waste.landfill', name: 'Waste to landfill', category: 'waste', activityUnit: 'kg',
     kgPerUnit: 0.45, scope: 3, source: DEFRA, confidence: 'low',
-    notes: 'Dominated by methane from decomposing organics.' },
+    gases: { co2: 0.03, ch4_bio: 0.0155 },
+    notes: 'Mixed household waste. Almost all of it is methane from organics decomposing without oxygen, which is why it nearly triples over a twenty-year horizon.' },
+  { key: 'waste.food_landfill', name: 'Food waste to landfill', category: 'waste', activityUnit: 'kg',
+    kgPerUnit: 0.60, scope: 3, source: DEFRA, confidence: 'low',
+    gases: { co2: 0.03, ch4_bio: 0.021 },
+    notes: 'Food rots faster and wetter than mixed waste, so it makes more methane. This is the counterfactual the compost module is measured against.' },
   { key: 'waste.recycled', name: 'Waste recycled', category: 'waste', activityUnit: 'kg',
     kgPerUnit: 0.021, scope: 3, source: DEFRA, confidence: 'low' },
   { key: 'waste.compost', name: 'Waste composted', category: 'waste', activityUnit: 'kg',
-    kgPerUnit: 0.010, scope: 3, source: DEFRA, confidence: 'low' },
+    kgPerUnit: 0.010, scope: 3, source: DEFRA, confidence: 'low',
+    gases: { co2: 0.004, ch4_bio: 0.00015, n2o: 0.0000075 },
+    notes: 'A working aerobic pile is not emission-free: it makes a little methane in its anaerobic pockets and a little nitrous oxide from the nitrogen. It is about a sixtieth of landfill, not zero, and the module says so (COMP-012).' },
+  { key: 'waste.compost_anaerobic', name: 'Compost, poorly managed', category: 'waste', activityUnit: 'kg',
+    kgPerUnit: 0.12, scope: 3, source: DEFRA, confidence: 'low',
+    gases: { co2: 0.004, ch4_bio: 0.0035, n2o: 0.00008 },
+    notes: 'A wet, compacted, unturned pile goes anaerobic and makes real methane. Roughly twelve times a managed pile, and worth knowing before claiming the benefit.' },
   { key: 'waste.reuse', name: 'Given away or sold on', category: 'waste', activityUnit: 'kg',
     kgPerUnit: 0, scope: 3, source: 'By convention', confidence: 'low',
     notes: 'Counted as zero here. The emissions were already counted when the thing was bought.' },
 
-  /* ── refrigerants: tiny masses, enormous effect ── */
+  /* ── refrigerants: tiny masses, enormous effect ──
+     These are the cleanest case for storing gases rather than equivalence. A
+     kilogram that leaked out of a heat pump is a kilogram of that refrigerant,
+     and the potential belongs to the gas registry — so the twenty-year view
+     works on them without a second factor. R-410A is more than twice as strong
+     over twenty years as its hundred-year figure suggests. */
   { key: 'refrigerant.r410a', name: 'R-410A', category: 'refrigerant', activityUnit: 'kg',
-    kgPerUnit: 2088, scope: 1, source: AR5, confidence: 'high' },
+    kgPerUnit: 2256, scope: 1, source: AR6, confidence: 'high', gases: { r410a: 1 } },
   { key: 'refrigerant.r32', name: 'R-32', category: 'refrigerant', activityUnit: 'kg',
-    kgPerUnit: 675, scope: 1, source: AR5, confidence: 'high' },
+    kgPerUnit: 771, scope: 1, source: AR6, confidence: 'high', gases: { r32: 1 } },
   { key: 'refrigerant.r134a', name: 'R-134a', category: 'refrigerant', activityUnit: 'kg',
-    kgPerUnit: 1430, scope: 1, source: AR5, confidence: 'high' },
+    kgPerUnit: 1530, scope: 1, source: AR6, confidence: 'high', gases: { r134a: 1 } },
   { key: 'refrigerant.r22', name: 'R-22', category: 'refrigerant', activityUnit: 'kg',
-    kgPerUnit: 1810, scope: 1, source: AR5, confidence: 'high' },
+    kgPerUnit: 1960, scope: 1, source: AR6, confidence: 'high', gases: { r22: 1 } },
   { key: 'refrigerant.r404a', name: 'R-404A', category: 'refrigerant', activityUnit: 'kg',
-    kgPerUnit: 3922, scope: 1, source: AR5, confidence: 'high' },
+    kgPerUnit: 4728, scope: 1, source: AR6, confidence: 'high', gases: { r404a: 1 } },
   { key: 'refrigerant.r454b', name: 'R-454B', category: 'refrigerant', activityUnit: 'kg',
-    kgPerUnit: 466, scope: 1, source: AR5, confidence: 'medium' },
+    kgPerUnit: 531, scope: 1, source: AR6, confidence: 'medium',
+    gases: { r32: 0.689, r1234yf: 0.311 },
+    notes: 'A blend, so it is recorded as its components and the potentials come from them. Widely quoted as 466 on AR4 values; this is the same blend under AR6, which is higher.' },
   { key: 'refrigerant.r290', name: 'R-290 (propane)', category: 'refrigerant', activityUnit: 'kg',
-    kgPerUnit: 3, scope: 1, source: AR5, confidence: 'high' },
+    kgPerUnit: 3, scope: 1, source: AR6, confidence: 'high', gases: { r290: 1 } },
+  { key: 'refrigerant.r600a', name: 'R-600a (isobutane)', category: 'refrigerant', activityUnit: 'kg',
+    kgPerUnit: 3, scope: 1, source: AR6, confidence: 'high', gases: { r600a: 1 },
+    notes: 'In most modern domestic fridges, and near enough harmless if it leaks.' },
 
   /* ── food, per kilogram ── */
-  { key: 'food.beef', name: 'Beef', category: 'food', activityUnit: 'kg', kgPerUnit: 60, scope: 3, source: PN, confidence: 'medium' },
-  { key: 'food.lamb', name: 'Lamb', category: 'food', activityUnit: 'kg', kgPerUnit: 39.7, scope: 3, source: PN, confidence: 'medium' },
-  { key: 'food.cheese', name: 'Cheese', category: 'food', activityUnit: 'kg', kgPerUnit: 23.9, scope: 3, source: PN, confidence: 'medium' },
+  { key: 'food.beef', name: 'Beef', category: 'food', activityUnit: 'kg', kgPerUnit: 60, scope: 3, source: PN_GAS, confidence: 'medium',
+    gases: { co2: 29.9, ch4_bio: 0.78, n2o: 0.033 },
+    notes: 'Roughly a third of beef\u2019s footprint is enteric methane from the animal itself, which is why it looks worse still over twenty years. The split is approximate; the total is the better-established number.' },
+  { key: 'food.lamb', name: 'Lamb', category: 'food', activityUnit: 'kg', kgPerUnit: 39.7, scope: 3, source: PN_GAS, confidence: 'medium',
+    gases: { co2: 19.6, ch4_bio: 0.55, n2o: 0.019 } },
+  { key: 'food.cheese', name: 'Cheese', category: 'food', activityUnit: 'kg', kgPerUnit: 23.9, scope: 3, source: PN_GAS, confidence: 'medium',
+    gases: { co2: 11.8, ch4_bio: 0.32, n2o: 0.012 } },
   { key: 'food.pork', name: 'Pork', category: 'food', activityUnit: 'kg', kgPerUnit: 12.3, scope: 3, source: PN, confidence: 'medium' },
   { key: 'food.poultry', name: 'Poultry', category: 'food', activityUnit: 'kg', kgPerUnit: 9.9, scope: 3, source: PN, confidence: 'medium' },
   { key: 'food.fish', name: 'Fish and seafood', category: 'food', activityUnit: 'kg', kgPerUnit: 11.9, scope: 3, source: PN, confidence: 'low' },
   { key: 'food.eggs', name: 'Eggs', category: 'food', activityUnit: 'kg', kgPerUnit: 4.7, scope: 3, source: PN, confidence: 'medium' },
-  { key: 'food.milk', name: 'Milk and dairy', category: 'food', activityUnit: 'kg', kgPerUnit: 3.2, scope: 3, source: PN, confidence: 'medium' },
-  { key: 'food.rice', name: 'Rice', category: 'food', activityUnit: 'kg', kgPerUnit: 4.5, scope: 3, source: PN, confidence: 'medium' },
+  { key: 'food.milk', name: 'Milk and dairy', category: 'food', activityUnit: 'kg', kgPerUnit: 3.2, scope: 3, source: PN_GAS, confidence: 'medium',
+    gases: { co2: 1.57, ch4_bio: 0.044, n2o: 0.0016 } },
+  { key: 'food.rice', name: 'Rice', category: 'food', activityUnit: 'kg', kgPerUnit: 4.5, scope: 3, source: PN_GAS, confidence: 'medium',
+    gases: { co2: 1.9, ch4_bio: 0.088, n2o: 0.0008 },
+    notes: 'Flooded paddies are anaerobic, so rice is the one staple crop with a large methane share.' },
   { key: 'food.grains', name: 'Grains, bread and pasta', category: 'food', activityUnit: 'kg', kgPerUnit: 1.6, scope: 3, source: PN, confidence: 'medium' },
   { key: 'food.legumes', name: 'Beans and pulses', category: 'food', activityUnit: 'kg', kgPerUnit: 1.0, scope: 3, source: PN, confidence: 'medium' },
   { key: 'food.tofu', name: 'Tofu and soy', category: 'food', activityUnit: 'kg', kgPerUnit: 3.2, scope: 3, source: PN, confidence: 'medium' },

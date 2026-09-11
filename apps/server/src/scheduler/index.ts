@@ -209,6 +209,38 @@ export async function runDailyPass(ctx: Ctx): Promise<Record<string, number>> {
     }
   }
 
+  /* ── compost: turns float from the last actual turn, not the calendar (COMP-009) ── */
+  const { turnsDue } = await import('../services/compost.js');
+  for (const t of await turnsDue(ctx)) {
+    const res = await notify(ctx, {
+      eventType: 'compost.turn',
+      title: `Turn ${t.system.name}`,
+      body: t.daysSinceTurn == null
+        ? 'Not turned since it was started.'
+        : `Last turned ${t.daysSinceTurn} days ago; this method wants it about every ${t.interval}.`,
+      // Keyed to the occasion, so running the pass twice sends it once.
+      dedupeKey: `compost:${t.system.id}:${ctx.today}`,
+    });
+    count('compostTurns', res.created);
+  }
+
+  /* ── garden: seed that has aged out of its viability (GARD-009) ── */
+  const { seedDrawer } = await import('../services/garden.js');
+  const drawer = await seedDrawer(ctx);
+  const past = drawer.filter((d: any) => d.viability.status === 'past');
+  if (past.length && ctx.today.slice(5) === '01-15') {
+    // Once a year, in the middle of January, when there is still time to order.
+    const res = await notify(ctx, {
+      eventType: 'garden.seed_viability',
+      title: `${past.length} seed lot${past.length === 1 ? '' : 's'} past viability`,
+      body: past.slice(0, 5).map((d: any) => d.variety.name).join(', ')
+        + (past.length > 5 ? `, and ${past.length - 5} more` : '')
+        + '. Test them before you sow, or order fresh.',
+      dedupeKey: `seedviability:${ctx.today.slice(0, 4)}`,
+    });
+    count('seedAlerts', res.created);
+  }
+
   const flushed = await flushDeliveries(ctx);
   count('delivered', flushed.sent);
   count('deliveryFailures', flushed.failed);

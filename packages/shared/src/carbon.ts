@@ -1,4 +1,7 @@
 import { areCompatible, convert, dimensionOf, normaliseUnit, UnitError } from './units.js';
+import {
+  DEFAULT_HORIZON, gwpFor, type GasAmount, type GasVector, type Horizon,
+} from './gases.js';
 
 /**
  * Emissions are counted in whole grams of CO₂ equivalent, for the same reason
@@ -55,6 +58,12 @@ export interface EmissionFactor {
   validFrom: string | null;
   validTo: string | null;
   confidence?: FactorConfidence;
+  /**
+   * Kilograms of each gas per activity unit, where the source published a
+   * composition. Null means the source gave only a CO₂e figure, which is
+   * recorded as the `co2e` mixture rather than split by guesswork (GHG-032).
+   */
+  gases?: GasVector | null;
 }
 
 /**
@@ -89,6 +98,48 @@ export function applyFactor(
     grams: Math.round(converted * factor.kgPerUnit * KG),
     quantityInFactorUnit: converted,
   };
+}
+
+/**
+ * Converts an activity into the mass of each gas it released, then applies the
+ * potentials. This is the path every recording takes; `applyFactor` above is
+ * the CO₂e-only shorthand it is built on.
+ *
+ * A factor with no published composition yields a single `co2e` row. That is
+ * the honest outcome: it says the number is a mixture of unstated composition,
+ * and it cannot later be re-read at another horizon — which is true, and better
+ * said than hidden.
+ */
+export function applyFactorGases(
+  quantity: number,
+  unit: string,
+  factor: Pick<EmissionFactor, 'activityUnit' | 'kgPerUnit' | 'gases'>,
+  horizon: Horizon = DEFAULT_HORIZON,
+): { quantityInFactorUnit: number; gases: GasAmount[]; totalGCo2e: Grams } {
+  const { quantityInFactorUnit, grams } = applyFactor(quantity, unit, factor);
+
+  const vector = factor.gases;
+  if (!vector || !Object.keys(vector).length) {
+    return {
+      quantityInFactorUnit,
+      gases: [{ gas: 'co2e', massMg: grams * 1000, gwp: 1, gCo2e: grams }],
+      totalGCo2e: grams,
+    };
+  }
+
+  const gases: GasAmount[] = [];
+  let total = 0;
+  for (const [gas, kgPerUnit] of Object.entries(vector)) {
+    if (!kgPerUnit) continue;
+    // Milligrams: a trace gas rounded to the nearest gram would be reported
+    // wrong by half its own mass, and its potential multiplies that error.
+    const massMg = Math.round(quantityInFactorUnit * kgPerUnit * KG * 1000);
+    const gwp = gwpFor(gas, horizon) ?? 1;
+    const gCo2e = Math.round((massMg / 1000) * gwp);
+    gases.push({ gas, massMg, gwp, gCo2e });
+    total += gCo2e;
+  }
+  return { quantityInFactorUnit, gases, totalGCo2e: total };
 }
 
 /** Picks the factor that best fits a date and a region: most specific wins. */

@@ -1,13 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { and, desc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
 import {
-  addDays, applyFactor, areCompatible, consumptionBetween, resolveFactor, CREDIT_TYPES,
-  type ActivityType, type EmissionFactor, type Grams, type Scope,
+  addDays, applyFactor, applyFactorGases, areCompatible, consumptionBetween, resolveFactor,
+  CREDIT_TYPES, DEFAULT_HORIZON, gwpFor,
+  type ActivityType, type EmissionFactor, type Grams, type Horizon, type Scope,
 } from '@homestead/shared';
 import type { Ctx } from '../core/ctx.js';
 import { badRequest, notFound } from '../core/errors.js';
 import {
-  activities, attributions, emissionFactors, emissions, meters, readings,
+  activities, attributions, avoidedEmissions, emissionFactors, emissions, meters, readings,
 } from '../db/schema.js';
 
 export interface AttributionRef { entityType: string; entityId: string }
@@ -35,6 +36,8 @@ export interface RecordedActivity {
   activity: typeof activities.$inferSelect;
   emissions: Array<typeof emissions.$inferSelect>;
   gCo2e: Grams;
+  /** The masses behind the equivalence, which is the point of storing gases. */
+  byGas?: Array<{ gas: string; massMg: number; gCo2e: Grams }>;
   /** Set when no factor could be found, so callers can say so plainly. */
   unresolved?: string;
 }
@@ -69,8 +72,18 @@ function toDomain(row: typeof emissionFactors.$inferSelect): EmissionFactor {
   return {
     id: row.id, key: row.key, name: row.name, activityUnit: row.activityUnit,
     kgPerUnit: row.kgPerUnit, scope: row.scope as Scope, region: row.region,
-    validFrom: row.validFrom, validTo: row.validTo,
+    validFrom: row.validFrom, validTo: row.validTo, gases: row.gases ?? null,
   };
+}
+
+/**
+ * The horizon a household reports at. An editorial choice rather than a
+ * technical one, so it is a setting with a default rather than a constant
+ * (GHG-039).
+ */
+export function horizonOf(ctx: Ctx): Horizon {
+  const setting = ctx.household.settings?.gwpHorizon;
+  return setting === 20 || setting === '20' ? 20 : DEFAULT_HORIZON;
 }
 
 /** The household's region, used to pick between regional factor variants. */
@@ -93,6 +106,7 @@ export async function recordActivity(ctx: Ctx, input: RecordActivityInput): Prom
 
   const occurredOn = input.occurredOn ?? ctx.today;
   const isCredit = (CREDIT_TYPES as readonly string[]).includes(input.type);
+  const horizon = horizonOf(ctx);
 
   const [activity] = await ctx.db.insert(activities).values({
     propertyId: input.propertyId ?? null,
@@ -119,14 +133,20 @@ export async function recordActivity(ctx: Ctx, input: RecordActivityInput): Prom
 
   // An amount already expressed in CO₂e skips the factor library entirely.
   if (input.explicitGrams != null) {
+    const signed = isCredit ? -Math.abs(input.explicitGrams) : input.explicitGrams;
     const [row] = await ctx.db.insert(emissions).values({
       activityId: activity!.id, factorId: null, factorKey: 'explicit',
       factorKgPerUnit: 0, quantityInFactorUnit: input.amount, factorUnit: input.unit,
-      gCo2e: isCredit ? -Math.abs(input.explicitGrams) : input.explicitGrams,
+      // An amount handed to us already in CO₂e has no composition to record.
+      gas: 'co2e', massMg: signed * 1000, gwp: 1, gwpHorizon: horizon,
+      gCo2e: signed,
       scope: 3, category: input.type,
       createdBy: ctx.user?.id ?? null,
     }).returning();
-    return { activity: activity!, emissions: [row!], gCo2e: row!.gCo2e };
+    return {
+      activity: activity!, emissions: [row!], gCo2e: row!.gCo2e,
+      byGas: [{ gas: 'co2e', massMg: signed * 1000, gCo2e: signed }],
+    };
   }
 
   const keys = input.factorKey ? [input.factorKey] : FACTOR_KEYS_BY_TYPE[input.type] ?? [];
@@ -134,40 +154,55 @@ export async function recordActivity(ctx: Ctx, input: RecordActivityInput): Prom
   const region = regionOf(ctx);
 
   const made: Array<typeof emissions.$inferSelect> = [];
+  const byGas = new Map<string, { massMg: number; gCo2e: number }>();
   let total = 0;
   for (const key of keys) {
     const candidates = rows.filter((r) => r.key === key).map(toDomain);
     const chosen = resolveFactor(candidates, { on: occurredOn, region });
     if (!chosen) continue;
-    let grams: number;
-    let quantityInFactorUnit: number;
+
+    // One row per gas, each carrying the mass of the gas itself alongside the
+    // equivalence derived from it. Storing the mass is what lets the same
+    // record be read at another horizon later without being rewritten.
+    let applied: ReturnType<typeof applyFactorGases>;
     try {
-      ({ grams, quantityInFactorUnit } = applyFactor(Math.abs(input.amount), input.unit, chosen));
+      applied = applyFactorGases(Math.abs(input.amount), input.unit, chosen, horizon);
     } catch (err) {
       throw badRequest((err as Error).message);
     }
-    const signed = isCredit ? -grams : grams;
     const source = rows.find((r) => r.id === chosen.id)!;
-    const [row] = await ctx.db.insert(emissions).values({
-      activityId: activity!.id,
-      factorId: chosen.id,
-      factorKey: key,
-      factorKgPerUnit: chosen.kgPerUnit,
-      quantityInFactorUnit,
-      factorUnit: chosen.activityUnit,
-      gCo2e: signed,
-      scope: chosen.scope,
-      category: source.category,
-      createdBy: ctx.user?.id ?? null,
-    }).returning();
-    made.push(row!);
-    total += signed;
+
+    for (const g of applied.gases) {
+      const massMg = isCredit ? -g.massMg : g.massMg;
+      const gCo2e = isCredit ? -g.gCo2e : g.gCo2e;
+      const [row] = await ctx.db.insert(emissions).values({
+        activityId: activity!.id,
+        factorId: chosen.id,
+        factorKey: key,
+        factorKgPerUnit: chosen.kgPerUnit,
+        quantityInFactorUnit: applied.quantityInFactorUnit,
+        factorUnit: chosen.activityUnit,
+        gas: g.gas,
+        massMg,
+        gwp: g.gwp,
+        gwpHorizon: horizon,
+        gCo2e,
+        scope: chosen.scope,
+        category: source.category,
+        createdBy: ctx.user?.id ?? null,
+      }).returning();
+      made.push(row!);
+      const acc = byGas.get(g.gas) ?? { massMg: 0, gCo2e: 0 };
+      byGas.set(g.gas, { massMg: acc.massMg + massMg, gCo2e: acc.gCo2e + gCo2e });
+      total += gCo2e;
+    }
   }
 
   return {
     activity: activity!,
     emissions: made,
     gCo2e: total,
+    byGas: [...byGas].map(([gas, v]) => ({ gas, ...v })),
     ...(made.length ? {} : { unresolved: keys.length ? `No emission factor found for ${keys.join(', ')}` : `No factor mapped for activity type ${input.type}` }),
   };
 }
@@ -234,43 +269,167 @@ export interface FootprintSummary {
   byScope: Array<{ scope: number; total: Grams }>;
   byCategory: Array<{ category: string; total: Grams }>;
   byMonth: Array<{ month: string; total: Grams }>;
+  byGas: Array<{ gas: string; massMg: number; total: Grams; pct: number }>;
   credits: Grams;
   activityCount: number;
+  /** The horizon these figures were read at, always stated (GHG-034). */
+  horizon: Horizon;
+  /**
+   * What the same period comes to at the other horizon, and the share of the
+   * total that could be re-evaluated at all. A footprint that is mostly
+   * unspecified mixtures cannot move much, and saying so is the honest way to
+   * present the comparison.
+   */
+  atOtherHorizon: { horizon: Horizon; total: Grams; ratio: number; reEvaluablePct: number };
 }
 
-export async function footprint(ctx: Ctx, from: string, to: string): Promise<FootprintSummary> {
+/**
+ * The household's footprint over a period.
+ *
+ * Every figure is recomputed from the stored gas masses at the horizon asked
+ * for, rather than summing the CO₂e that happened to be written at recording
+ * time. That is what makes switching horizon a re-reading of the record
+ * instead of a rewrite of it (GHG-034), and it means a factor recorded years
+ * ago under one horizon reports correctly under another today.
+ */
+export async function footprint(
+  ctx: Ctx, from: string, to: string, opts: { horizon?: Horizon } = {},
+): Promise<FootprintSummary> {
+  const horizon = opts.horizon ?? horizonOf(ctx);
+  const other: Horizon = horizon === 100 ? 20 : 100;
   const where = and(
     isNull(activities.deletedAt),
     gte(activities.occurredOn, from),
     lte(activities.occurredOn, to),
   );
-  const base = ctx.db.select({
+  const raw = await ctx.db.select({
     scope: emissions.scope,
     category: emissions.category,
     month: sql<string>`substr(${activities.occurredOn}, 1, 7)`,
-    grams: emissions.gCo2e,
+    gas: emissions.gas,
+    massMg: emissions.massMg,
+    storedGrams: emissions.gCo2e,
     activityId: activities.id,
   }).from(emissions).innerJoin(activities, eq(activities.id, emissions.activityId)).where(where);
 
-  const rows = await base;
-  const sum = (list: typeof rows) => list.reduce((a, b) => a + Number(b.grams), 0);
+  // An unspecified mixture has no composition to re-evaluate, so it carries
+  // through at whatever it was recorded as. Everything else is recomputed.
+  const at = (r: typeof raw[number], h: Horizon): number => {
+    const gwp = gwpFor(r.gas, h);
+    if (gwp == null || r.gas === 'co2e') return Number(r.storedGrams);
+    return Math.round((Number(r.massMg) / 1000) * gwp);
+  };
+
+  const rows = raw.map((r) => ({ ...r, grams: at(r, horizon) }));
+  const sum = (list: typeof rows) => list.reduce((a, b) => a + b.grams, 0);
   const group = <K extends string | number>(key: (r: typeof rows[number]) => K) => {
     const m = new Map<K, number>();
-    for (const r of rows) m.set(key(r), (m.get(key(r)) ?? 0) + Number(r.grams));
+    for (const r of rows) m.set(key(r), (m.get(key(r)) ?? 0) + r.grams);
     return m;
   };
 
+  const total = sum(rows);
+  const gasMass = new Map<string, { massMg: number; total: number }>();
+  for (const r of rows) {
+    const acc = gasMass.get(r.gas) ?? { massMg: 0, total: 0 };
+    gasMass.set(r.gas, { massMg: acc.massMg + Number(r.massMg), total: acc.total + r.grams });
+  }
+
+  const otherTotal = raw.reduce((a, r) => a + at(r, other), 0);
+  const reEvaluable = rows.filter((r) => r.gas !== 'co2e').reduce((a, b) => a + Math.abs(b.grams), 0);
+  const absTotal = rows.reduce((a, b) => a + Math.abs(b.grams), 0);
+
   return {
     from, to,
-    total: sum(rows),
-    byScope: [...group((r) => r.scope)].map(([scope, total]) => ({ scope: Number(scope), total }))
+    total,
+    byScope: [...group((r) => r.scope)].map(([scope, t]) => ({ scope: Number(scope), total: t }))
       .sort((a, b) => a.scope - b.scope),
-    byCategory: [...group((r) => r.category)].map(([category, total]) => ({ category: String(category), total }))
+    byCategory: [...group((r) => r.category)].map(([category, t]) => ({ category: String(category), total: t }))
       .sort((a, b) => b.total - a.total),
-    byMonth: [...group((r) => r.month)].map(([month, total]) => ({ month: String(month), total }))
+    byMonth: [...group((r) => r.month)].map(([month, t]) => ({ month: String(month), total: t }))
       .sort((a, b) => a.month.localeCompare(b.month)),
-    credits: rows.filter((r) => Number(r.grams) < 0).reduce((a, b) => a + Number(b.grams), 0),
+    byGas: [...gasMass].map(([gas, v]) => ({
+      gas, massMg: v.massMg, total: v.total,
+      pct: total !== 0 ? Math.round((v.total / total) * 1000) / 10 : 0,
+    })).sort((a, b) => b.total - a.total),
+    credits: rows.filter((r) => r.grams < 0).reduce((a, b) => a + b.grams, 0),
     activityCount: new Set(rows.map((r) => r.activityId)).size,
+    horizon,
+    atOtherHorizon: {
+      horizon: other,
+      total: otherTotal,
+      ratio: total !== 0 ? Math.round((otherTotal / total) * 1000) / 1000 : 1,
+      reEvaluablePct: absTotal > 0 ? Math.round((reEvaluable / absTotal) * 100) : 0,
+    },
+  };
+}
+
+/* ─────────────────────────── avoided emissions ─────────────────────────── */
+
+/**
+ * Records what a counterfactual would have emitted and this household did not.
+ *
+ * Kept in its own table, never as a negative emission, so that no query can
+ * accidentally net an avoidance against the footprint. An avoided tonne is a
+ * statement about a world that did not happen; treating it as an emitted tonne
+ * that did is the most common dishonesty in carbon accounting (GHG-038).
+ */
+export async function recordAvoided(ctx: Ctx, args: {
+  sourceType: string;
+  sourceId: string;
+  occurredOn?: string;
+  counterfactual: string;
+  gCo2e100: number;
+  gCo2e20?: number;
+  cost?: number;
+  basis?: 'measured' | 'estimated';
+  category?: string;
+}): Promise<typeof avoidedEmissions.$inferSelect> {
+  const [row] = await ctx.db.insert(avoidedEmissions).values({
+    sourceType: args.sourceType,
+    sourceId: args.sourceId,
+    occurredOn: args.occurredOn ?? ctx.today,
+    counterfactual: args.counterfactual,
+    gCo2e100: Math.round(args.gCo2e100),
+    gCo2e20: Math.round(args.gCo2e20 ?? args.gCo2e100),
+    cost: Math.round(args.cost ?? 0),
+    basis: args.basis ?? 'estimated',
+    category: args.category ?? 'other',
+    createdBy: ctx.user?.id ?? null,
+  }).returning();
+  return row!;
+}
+
+export async function avoidedBetween(
+  ctx: Ctx, from: string, to: string,
+): Promise<{
+  total100: number; total20: number; cost: number; count: number;
+  byCategory: Array<{ category: string; total100: number; total20: number; cost: number }>;
+  items: Array<typeof avoidedEmissions.$inferSelect>;
+}> {
+  const rows = await ctx.db.select().from(avoidedEmissions).where(and(
+    isNull(avoidedEmissions.deletedAt),
+    gte(avoidedEmissions.occurredOn, from),
+    lte(avoidedEmissions.occurredOn, to),
+  )).orderBy(desc(avoidedEmissions.occurredOn));
+
+  const byCat = new Map<string, { total100: number; total20: number; cost: number }>();
+  for (const r of rows) {
+    const acc = byCat.get(r.category) ?? { total100: 0, total20: 0, cost: 0 };
+    byCat.set(r.category, {
+      total100: acc.total100 + r.gCo2e100,
+      total20: acc.total20 + r.gCo2e20,
+      cost: acc.cost + r.cost,
+    });
+  }
+  return {
+    total100: rows.reduce((a, b) => a + b.gCo2e100, 0),
+    total20: rows.reduce((a, b) => a + b.gCo2e20, 0),
+    cost: rows.reduce((a, b) => a + b.cost, 0),
+    count: rows.length,
+    byCategory: [...byCat].map(([category, v]) => ({ category, ...v }))
+      .sort((a, b) => b.total100 - a.total100),
+    items: rows.slice(0, 100),
   };
 }
 
@@ -425,6 +584,66 @@ export async function recordProductEmissions(
   });
 }
 
+/**
+ * What a quantity of a product embodied, computed and not written.
+ *
+ * The distinction matters. A pound of beef's embodied emissions were already
+ * recorded when it was bought; recording them a second time because it was
+ * later binned would count the same kilogram twice in the household's
+ * footprint. What wasting it produces that is genuinely new is the *disposal*
+ * emission — landfill methane, or a fraction of it on a compost pile.
+ *
+ * So the embodied figure is returned for the report, where it is the number
+ * most likely to change behaviour, and only the disposal is emitted.
+ */
+export async function wastedEmbodied(ctx: Ctx, args: {
+  productId: string; quantity: number; unit?: string | null; occurredOn?: string;
+}): Promise<{ grams: Grams; factorKey: string } | null> {
+  const { key, unitMassKg, defaultUnit } = await factorKeyForProduct(ctx, args.productId);
+  if (!key) return null;
+  const unit = args.unit || defaultUnit;
+  if (!unit) return null;
+
+  const factorRows = await factorsFor(ctx, [key]);
+  const chosen = resolveFactor(factorRows.map(toDomain), {
+    on: args.occurredOn ?? ctx.today, region: regionOf(ctx),
+  });
+  if (!chosen) return null;
+
+  let amount = args.quantity;
+  let useUnit = unit;
+  if (!areCompatible(useUnit, chosen.activityUnit)) {
+    const mass = productMass(args.quantity, unit, unitMassKg);
+    if (!mass || !areCompatible(mass.unit, chosen.activityUnit)) return null;
+    amount = mass.amount;
+    useUnit = mass.unit;
+  }
+  try {
+    const { grams } = applyFactor(amount, useUnit, chosen);
+    return { grams, factorKey: key };
+  } catch {
+    return null;
+  }
+}
+
+/** The mass of a product quantity in kilograms, for a disposal route. */
+export async function productKg(ctx: Ctx, args: {
+  productId: string; quantity: number; unit?: string | null;
+}): Promise<number | null> {
+  const { unitMassKg, defaultUnit } = await factorKeyForProduct(ctx, args.productId);
+  const unit = args.unit || defaultUnit;
+  if (!unit) return null;
+  const mass = productMass(args.quantity, unit, unitMassKg);
+  if (!mass) return null;
+  if (mass.unit === 'kg') return mass.amount;
+  try {
+    const { convert } = await import('@homestead/shared');
+    return convert(mass.amount, mass.unit, 'kg');
+  } catch {
+    return null;
+  }
+}
+
 /** Refrigerant leakage, which is small in mass and enormous in effect (GHG-013). */
 export async function recordRefrigerant(
   ctx: Ctx,
@@ -464,6 +683,7 @@ export async function explain(
 ): Promise<Array<{
   activityId: string; occurredOn: string; type: string; amount: number; unit: string;
   factorKey: string; factorKgPerUnit: number; factorUnit: string; gCo2e: Grams;
+  gas: string; massMg: number; gwp: number;
   scope: number; category: string; note: string | null; source: string | null;
 }>> {
   const where = [
@@ -486,7 +706,8 @@ export async function explain(
     activityId: r.a.id, occurredOn: r.a.occurredOn, type: r.a.type,
     amount: r.a.amount, unit: r.a.unit,
     factorKey: r.e.factorKey, factorKgPerUnit: r.e.factorKgPerUnit, factorUnit: r.e.factorUnit,
-    gCo2e: r.e.gCo2e, scope: r.e.scope, category: r.e.category,
+    gCo2e: r.e.gCo2e, gas: r.e.gas, massMg: r.e.massMg, gwp: r.e.gwp,
+    scope: r.e.scope, category: r.e.category,
     note: r.a.note, source: r.f?.source ?? null,
   }));
 }

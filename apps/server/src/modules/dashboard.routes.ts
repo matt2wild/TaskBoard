@@ -134,6 +134,40 @@ export function dashboardRoutes(app: FastifyInstance): void {
         topCategory: carbonNow.byCategory[0] ?? null,
         target: carbonTarget,
       },
+      /** The garden and the pile, which both want looking at rather than reading about. */
+      garden: await (async () => {
+        const { plantings, harvests } = await import('../db/schema.js');
+        const [growing, readySoon, recent] = await Promise.all([
+          ctx.db.select({ n: sql<number>`count(*)` }).from(plantings).where(and(
+            inArray(plantings.status, ['growing', 'harvesting']), isNull(plantings.deletedAt),
+          )),
+          ctx.db.select({ n: sql<number>`count(*)` }).from(plantings).where(and(
+            eq(plantings.status, 'growing'), isNull(plantings.deletedAt),
+            sql`${plantings.expectedHarvestOn} is not null`,
+            lte(plantings.expectedHarvestOn, soon),
+          )),
+          ctx.db.select({
+            n: sql<number>`count(*)`,
+            value: sql<number>`coalesce(sum(${harvests.estValue}), 0)`,
+          }).from(harvests).where(and(
+            isNull(harvests.deletedAt), gte(harvests.harvestedOn, `${ctx.today.slice(0, 4)}-01-01`),
+          )),
+        ]);
+        return {
+          growing: Number(growing[0]?.n ?? 0),
+          readySoon: Number(readySoon[0]?.n ?? 0),
+          harvests: Number(recent[0]?.n ?? 0),
+          harvestValue: Number(recent[0]?.value ?? 0),
+        };
+      })(),
+      compost: await (async () => {
+        const { turnsDue } = await import('../services/compost.js');
+        const due = await turnsDue(ctx);
+        return {
+          turnsDue: due.length,
+          names: due.slice(0, 3).map((d) => d.system.name),
+        };
+      })(),
       tasks: decorated.slice(0, 50),
       expiring: expiring.slice(0, 20),
       lowStock: low.slice(0, 20),

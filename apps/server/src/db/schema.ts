@@ -1290,7 +1290,14 @@ export const emissionFactors = sqliteTable('emission_factor', {
   category: text('category').notNull(),
   /** The unit the coefficient is expressed per: kwh, therm, gal, kg, mi, m3. */
   activityUnit: text('activity_unit').notNull(),
+  /** CO₂e per unit at the hundred-year horizon. Derived from `gases` when it is set. */
   kgPerUnit: real('kg_per_unit').notNull(),
+  /**
+   * Kilograms of each gas per activity unit, where the source published a
+   * composition. Null means the source gave only a CO₂e figure, which is
+   * recorded against the `co2e` mixture rather than split by guess (GHG-032).
+   */
+  gases: json<Record<string, number>>('gases'),
   scope: integer('scope').notNull().default(3),
   region: text('region'),
   validFrom: text('valid_from'),
@@ -1353,6 +1360,17 @@ export const emissions = sqliteTable('emission', {
   factorKgPerUnit: real('factor_kg_per_unit').notNull(),
   quantityInFactorUnit: real('quantity_in_factor_unit').notNull(),
   factorUnit: text('factor_unit').notNull(),
+  /** Which gas this row is. `co2e` means an unspecified mixture (GHG-033). */
+  gas: text('gas').notNull().default('co2e'),
+  /**
+   * Milligrams of the gas itself — the measured quantity, from which CO₂e
+   * derives. Milligrams because a trace gas rounded to the nearest gram is
+   * wrong by half its own mass, and its potential multiplies that error.
+   */
+  massMg: integer('mass_mg').notNull().default(0),
+  /** Snapshots, so a horizon change is a re-reading and never a rewrite. */
+  gwp: real('gwp').notNull().default(1),
+  gwpHorizon: integer('gwp_horizon').notNull().default(100),
   gCo2e: integer('g_co2e').notNull(),
   scope: integer('scope').notNull(),
   category: text('category').notNull(),
@@ -1360,6 +1378,51 @@ export const emissions = sqliteTable('emission', {
 }, (t) => [
   index('emission_activity_ix').on(t.activityId),
   index('emission_scope_ix').on(t.scope),
+  index('emission_gas_ix').on(t.gas),
+]);
+
+/**
+ * The gas registry: potentials at both horizons, with the assessment they came
+ * from. Held in the database rather than only in code so a household can
+ * correct one the same way it corrects a factor (GHG-031).
+ */
+export const greenhouseGases = sqliteTable('greenhouse_gas', {
+  key: text('key').primaryKey(),
+  name: text('name').notNull(),
+  formula: text('formula'),
+  gwp100: real('gwp_100').notNull(),
+  gwp20: real('gwp_20').notNull(),
+  lifetimeYears: real('lifetime_years'),
+  isBiogenic: integer('is_biogenic', { mode: 'boolean' }).notNull().default(false),
+  kind: text('kind').notNull().default('primary'),
+  source: text('source'),
+  notes: text('notes'),
+  ...audit,
+});
+
+/**
+ * What a counterfactual would have emitted and this household did not.
+ *
+ * Deliberately its own table rather than a negative emission: an avoided tonne
+ * is not an emitted tonne, and the separation is structural so that no query
+ * can accidentally net one against the other (GHG-038).
+ */
+export const avoidedEmissions = sqliteTable('avoided_emission', {
+  id: pk(),
+  sourceType: text('source_type').notNull(),
+  sourceId: text('source_id').notNull(),
+  occurredOn: text('occurred_on').notNull(),
+  /** Stated in words, always. An unexplained avoided figure is worse than none. */
+  counterfactual: text('counterfactual').notNull(),
+  gCo2e100: integer('g_co2e_100').notNull().default(0),
+  gCo2e20: integer('g_co2e_20').notNull().default(0),
+  cost: integer('cost').notNull().default(0),
+  basis: text('basis').notNull().default('estimated'),
+  category: text('category').notNull().default('other'),
+  ...audit,
+}, (t) => [
+  index('avoided_source_ix').on(t.sourceType, t.sourceId),
+  index('avoided_date_ix').on(t.occurredOn),
 ]);
 
 export const carbonTargets = sqliteTable('carbon_target', {
@@ -1429,3 +1492,272 @@ export const jobRuns = sqliteTable('job_run', {
   status: text('status').notNull().default('running'),
   detail: json<Record<string, unknown>>('detail'),
 }, (t) => [uniqueIndex('job_run_uq').on(t.jobKey, t.ranForDate)]);
+
+/* ──────────────────────── garden and growing ─────────────────────────── */
+
+/** A defined growing area with a history, not a drawing (GARD-001). */
+export const beds = sqliteTable('bed', {
+  id: pk(),
+  propertyId: text('property_id').notNull(),
+  locationId: text('location_id'),
+  name: text('name').notNull(),
+  method: text('method').notNull().default('raised'),
+  areaSqft: real('area_sqft'),
+  sun: text('sun'),
+  irrigation: text('irrigation'),
+  soilNotes: text('soil_notes'),
+  activeFrom: text('active_from'),
+  activeTo: text('active_to'),
+  sort: integer('sort').notNull().default(0),
+  ...audit,
+}, (t) => [index('bed_property_ix').on(t.propertyId)]);
+
+export const soilTests = sqliteTable('soil_test', {
+  id: pk(),
+  bedId: text('bed_id').notNull().references(() => beds.id, { onDelete: 'cascade' }),
+  takenOn: text('taken_on').notNull(),
+  ph: real('ph'),
+  n: real('n'),
+  p: real('p'),
+  k: real('k'),
+  organicMatterPct: real('organic_matter_pct'),
+  lab: text('lab'),
+  notes: text('notes'),
+  ...audit,
+}, (t) => [index('soil_test_bed_ix').on(t.bedId)]);
+
+/**
+ * The plant catalogue. `family` is the load-bearing column: it is what makes
+ * rotation checkable without anyone having to remember botany (GARD-004).
+ */
+export const plantVarieties = sqliteTable('plant_variety', {
+  id: pk(),
+  name: text('name').notNull(),
+  cultivar: text('cultivar'),
+  family: text('family'),
+  species: text('species'),
+  category: text('category').notNull().default('vegetable'),
+  daysToMaturity: integer('days_to_maturity'),
+  sowDepthIn: real('sow_depth_in'),
+  spacingIn: real('spacing_in'),
+  sun: text('sun'),
+  frostHardy: integer('frost_hardy', { mode: 'boolean' }).notNull().default(false),
+  perennial: integer('perennial', { mode: 'boolean' }).notNull().default(false),
+  /** Saved seed comes true only from an open-pollinated variety (CIRC-014). */
+  openPollinated: integer('open_pollinated', { mode: 'boolean' }).notNull().default(true),
+  seedViabilityYears: integer('seed_viability_years'),
+  indoorWeeks: integer('indoor_weeks'),
+  /** Offsets in weeks from a frost date, so the window moves with the climate. */
+  sowWindow: json<{ anchor: string; startWeeks: number; endWeeks: number; method?: string }>('sow_window'),
+  /** Links a harvest to what the bought equivalent would have emitted. */
+  emissionFactorKey: text('emission_factor_key'),
+  /** What a pound of it typically costs, when the household has no price history. */
+  typicalPrice: integer('typical_price'),
+  typicalPriceUnit: text('typical_price_unit'),
+  yieldPerPlantLb: real('yield_per_plant_lb'),
+  notes: text('notes'),
+  isDefault: integer('is_default', { mode: 'boolean' }).notNull().default(false),
+  ...audit,
+}, (t) => [
+  index('variety_name_ix').on(t.name),
+  index('variety_family_ix').on(t.family),
+]);
+
+/** Seed is stock, held in the location tree like anything else (GARD-008). */
+export const seedLots = sqliteTable('seed_lot', {
+  id: pk(),
+  varietyId: text('variety_id').notNull().references(() => plantVarieties.id),
+  origin: text('origin').notNull().default('bought'),
+  supplierContactId: text('supplier_contact_id'),
+  /** The planting this seed was saved from: half of the household's seed cycle (INT-015). */
+  savedFromPlantingId: text('saved_from_planting_id'),
+  quantity: real('quantity').notNull().default(0),
+  unit: text('unit').notNull().default('seed'),
+  yearPacked: integer('year_packed'),
+  locationId: text('location_id'),
+  cost: integer('cost'),
+  germinationRate: real('germination_rate'),
+  testedOn: text('tested_on'),
+  notes: text('notes'),
+  ...audit,
+}, (t) => [
+  index('seed_lot_variety_ix').on(t.varietyId),
+  index('seed_lot_saved_ix').on(t.savedFromPlantingId),
+]);
+
+export const plantings = sqliteTable('planting', {
+  id: pk(),
+  varietyId: text('variety_id').notNull().references(() => plantVarieties.id),
+  bedId: text('bed_id'),
+  /** …and the other half of the cycle: what this was grown from (INT-015). */
+  seedLotId: text('seed_lot_id'),
+  method: text('method').notNull().default('direct'),
+  sownOn: text('sown_on').notNull(),
+  transplantedOn: text('transplanted_on'),
+  expectedHarvestOn: text('expected_harvest_on'),
+  quantity: real('quantity'),
+  status: text('status').notNull().default('growing'),
+  removedOn: text('removed_on'),
+  /** A garden record that only holds successes is not a record (GARD-017). */
+  failureReason: text('failure_reason'),
+  notes: text('notes'),
+  ...audit,
+}, (t) => [
+  index('planting_bed_ix').on(t.bedId),
+  index('planting_variety_ix').on(t.varietyId),
+  index('planting_sown_ix').on(t.sownOn),
+]);
+
+export const harvests = sqliteTable('harvest', {
+  id: pk(),
+  plantingId: text('planting_id').notNull().references(() => plantings.id, { onDelete: 'cascade' }),
+  harvestedOn: text('harvested_on').notNull(),
+  quantity: real('quantity').notNull(),
+  unit: text('unit').notNull().default('lb'),
+  quality: text('quality'),
+  /** Set when the harvest went into the pantry as ordinary stock (INT-009). */
+  stockItemId: text('stock_item_id'),
+  estValue: integer('est_value'),
+  valueBasis: text('value_basis'),
+  notes: text('notes'),
+  ...audit,
+}, (t) => [
+  index('harvest_planting_ix').on(t.plantingId),
+  index('harvest_date_ix').on(t.harvestedOn),
+]);
+
+export const gardenObservations = sqliteTable('garden_observation', {
+  id: pk(),
+  plantingId: text('planting_id'),
+  bedId: text('bed_id'),
+  observedOn: text('observed_on').notNull(),
+  kind: text('kind').notNull().default('note'),
+  text: text('text').notNull(),
+  ...audit,
+}, (t) => [
+  index('observation_planting_ix').on(t.plantingId),
+  index('observation_bed_ix').on(t.bedId),
+]);
+
+/* ──────────────────────────────  compost  ────────────────────────────── */
+
+export const compostSystems = sqliteTable('compost_system', {
+  id: pk(),
+  name: text('name').notNull(),
+  method: text('method').notNull().default('hot_pile'),
+  locationId: text('location_id'),
+  capacity: real('capacity'),
+  capacityUnit: text('capacity_unit').notNull().default('cuft'),
+  activeFrom: text('active_from'),
+  status: text('status').notNull().default('active'),
+  notes: text('notes'),
+  ...audit,
+});
+
+/** The material library, each entry naming where its C:N ratio came from. */
+export const compostMaterials = sqliteTable('compost_material', {
+  key: text('key').primaryKey(),
+  name: text('name').notNull(),
+  cnRatio: real('cn_ratio').notNull(),
+  kind: text('kind').notNull().default('green'),
+  moisture: text('moisture'),
+  /** Some things simply do not belong in a domestic pile, and it should say so. */
+  acceptable: integer('acceptable', { mode: 'boolean' }).notNull().default(true),
+  caution: text('caution'),
+  source: text('source'),
+  ...audit,
+});
+
+export const compostInputs = sqliteTable('compost_input', {
+  id: pk(),
+  systemId: text('system_id').notNull().references(() => compostSystems.id, { onDelete: 'cascade' }),
+  materialKey: text('material_key').notNull(),
+  quantity: real('quantity').notNull(),
+  unit: text('unit').notNull().default('kg'),
+  occurredOn: text('occurred_on').notNull(),
+  /** What it came from — a wasted stock item, a finished planting. */
+  sourceType: text('source_type'),
+  sourceId: text('source_id'),
+  /** Snapshot, on the same principle as a factor value. */
+  cnRatio: real('cn_ratio'),
+  note: text('note'),
+  ...audit,
+}, (t) => [
+  index('compost_input_system_ix').on(t.systemId),
+  index('compost_input_date_ix').on(t.occurredOn),
+]);
+
+export const compostEvents = sqliteTable('compost_event', {
+  id: pk(),
+  systemId: text('system_id').notNull().references(() => compostSystems.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull().default('turned'),
+  occurredOn: text('occurred_on').notNull(),
+  temperatureF: real('temperature_f'),
+  moisture: text('moisture'),
+  note: text('note'),
+  ...audit,
+}, (t) => [index('compost_event_system_ix').on(t.systemId, t.occurredOn)]);
+
+export const compostOutputs = sqliteTable('compost_output', {
+  id: pk(),
+  systemId: text('system_id').notNull().references(() => compostSystems.id, { onDelete: 'cascade' }),
+  occurredOn: text('occurred_on').notNull(),
+  quantity: real('quantity').notNull(),
+  unit: text('unit').notNull().default('cuft'),
+  /** Where it went. A bed closes the loop as a recorded input (INT-011). */
+  bedId: text('bed_id'),
+  estValue: integer('est_value'),
+  note: text('note'),
+  ...audit,
+}, (t) => [index('compost_output_system_ix').on(t.systemId)]);
+
+/* ───────────────────── circular economy: repair, reuse ───────────────── */
+
+export const repairs = sqliteTable('repair', {
+  id: pk(),
+  targetType: text('target_type'),
+  targetId: text('target_id'),
+  /** Not everything repaired is in the registry. A chair is still a repair. */
+  targetText: text('target_text'),
+  occurredOn: text('occurred_on').notNull(),
+  symptom: text('symptom').notNull(),
+  workDone: text('work_done'),
+  partsCost: integer('parts_cost').notNull().default(0),
+  timeMin: integer('time_min'),
+  byUserId: text('by_user_id'),
+  byContactId: text('by_contact_id'),
+  outcome: text('outcome').notNull().default('fixed'),
+  extendedLifeYears: real('extended_life_years'),
+  avoidedCost: integer('avoided_cost'),
+  avoidedGCo2e: integer('avoided_g_co2e'),
+  transactionId: text('transaction_id'),
+  notes: text('notes'),
+  ...audit,
+}, (t) => [
+  index('repair_target_ix').on(t.targetType, t.targetId),
+  index('repair_date_ix').on(t.occurredOn),
+]);
+
+/**
+ * Circulation the household had to enter by hand. Loans, disposals and compost
+ * inputs are circulation by virtue of what they are and are reported from
+ * their own records rather than copied here (INT-013).
+ */
+export const circulationEvents = sqliteTable('circulation_event', {
+  id: pk(),
+  kind: text('kind').notNull(),
+  itemType: text('item_type'),
+  itemId: text('item_id'),
+  itemText: text('item_text'),
+  occurredOn: text('occurred_on').notNull(),
+  contactId: text('contact_id'),
+  quantity: real('quantity'),
+  unit: text('unit'),
+  value: integer('value'),
+  avoidedGCo2e: integer('avoided_g_co2e'),
+  note: text('note'),
+  ...audit,
+}, (t) => [
+  index('circulation_kind_ix').on(t.kind),
+  index('circulation_date_ix').on(t.occurredOn),
+]);

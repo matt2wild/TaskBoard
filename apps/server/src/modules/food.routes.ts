@@ -15,10 +15,21 @@ import {
   expiringSoon, lowStockList, onHand, onHandMany, reconcileLowStock,
 } from '../services/stock.js';
 import { attachCost, distributeReceipt } from '../services/budget.js';
-import { recordProductEmissions } from '../services/carbon.js';
+import {
+  productKg, recordProductEmissions, tryRecordActivity, wastedEmbodied,
+} from '../services/carbon.js';
 import { locationPaths } from './core.routes.js';
 
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+/** The pile to use when the household has only one, which is the usual case. */
+async function defaultCompostSystem(ctx: any): Promise<string | null> {
+  const { compostSystems } = await import('../db/schema.js');
+  const row = (await ctx.db.select({ id: compostSystems.id }).from(compostSystems)
+    .where(and(eq(compostSystems.status, 'active'), isNull(compostSystems.deletedAt)))
+    .limit(1))[0];
+  return row?.id ?? null;
+}
 
 export function foodRoutes(app: FastifyInstance): void {
   crudRoutes(app, '/api/v1/product-categories', {
@@ -198,6 +209,9 @@ export function foodRoutes(app: FastifyInstance): void {
       action: z.enum(['use', 'use_all', 'set', 'open', 'waste']),
       quantity: z.number().positive().optional(),
       wasteReason: z.enum(WASTE_REASONS).optional(),
+      /** Where it actually goes. One control, every route the household has (INT-010). */
+      route: z.enum(['bin', 'compost', 'animal']).default('bin').optional(),
+      compostSystemId: z.string().nullable().optional(),
     }).parse(req.body);
     const lot = (await req.ctx.db.select().from(stockItems).where(eq(stockItems.id, id)).limit(1))[0];
     if (!lot) throw notFound('Stock item');
@@ -234,18 +248,54 @@ export function foodRoutes(app: FastifyInstance): void {
       wasteReason: body.wasteReason, locationId: lot.locationId,
     });
     let wastedGCo2e: number | null = null;
+    let disposalGCo2e: number | null = null;
+    let composted: any = null;
+    let avoided: any = null;
+
     if (body.action === 'waste') {
-      // Thrown-out food carries its whole footprint for nothing, which is the
-      // number most likely to change behaviour.
-      const carbon = await recordProductEmissions(req.ctx, {
-        productId: lot.productId, quantity: qty, unit: lot.unit, type: 'waste',
-        sourceType: 'waste_log', sourceId: id,
-        note: `Wasted: ${body.wasteReason ?? 'expired'}`,
+      const route = body.route ?? 'bin';
+
+      // The footprint this food carried, thrown away for nothing. It is the
+      // number most likely to change behaviour — and it is *reported*, not
+      // re-emitted: these emissions were already counted when the food was
+      // bought, and counting them again here would double the household's
+      // footprint for the same kilogram.
+      const embodied = await wastedEmbodied(req.ctx, {
+        productId: lot.productId, quantity: qty, unit: lot.unit,
       });
-      wastedGCo2e = carbon?.gCo2e ?? null;
+      wastedGCo2e = embodied?.grams ?? null;
+
+      const kg = await productKg(req.ctx, { productId: lot.productId, quantity: qty, unit: lot.unit });
+
+      if (route === 'compost') {
+        // One action: the stock movement, the compost input, the pile's own
+        // emissions and the avoided landfill methane (INT-010, COMP-004).
+        const { addCompostInput } = await import('../services/compost.js');
+        const systemId = body.compostSystemId ?? await defaultCompostSystem(req.ctx);
+        if (!systemId) throw badRequest('No compost system set up yet. Add one first, or bin it.');
+        const result = await addCompostInput(req.ctx, {
+          systemId, materialKey: 'kitchen_scraps',
+          quantity: kg ?? qty, unit: kg ? 'kg' : lot.unit,
+          sourceType: 'waste_log', sourceId: id,
+          note: `From the pantry: ${body.wasteReason ?? 'expired'}`,
+        });
+        composted = { systemId, balance: result.balance, gCo2e: result.gCo2e };
+        disposalGCo2e = result.gCo2e;
+        avoided = result.avoided;
+      } else if (route === 'bin' && kg && kg > 0) {
+        // Landfill is where the methane is, and it is a real new emission.
+        const disposal = await tryRecordActivity(req.ctx, {
+          type: 'waste', amount: kg, unit: 'kg',
+          factorKey: 'waste.food_landfill',
+          sourceType: 'waste_log', sourceId: id,
+          note: `Binned: ${body.wasteReason ?? 'expired'}`,
+          attributions: [{ entityType: 'product', entityId: lot.productId }],
+        });
+        disposalGCo2e = disposal?.gCo2e ?? null;
+      }
     }
     const fresh = (await req.ctx.db.select().from(stockItems).where(eq(stockItems.id, id)).limit(1))[0];
-    return { stockItem: fresh, ...result, wastedGCo2e };
+    return { stockItem: fresh, ...result, wastedGCo2e, disposalGCo2e, composted, avoided };
   });
 
   app.post('/api/v1/stock/consume', async (req) => {
@@ -504,8 +554,13 @@ export function foodRoutes(app: FastifyInstance): void {
       p.count += 1; p.cost += r.w.estCost ?? 0; p.quantity += r.w.quantity;
       byProduct.set(r.product, p);
     }
+    // Two different numbers, and conflating them was a bug worth naming. The
+    // *disposal* emission is new — landfill methane, or a fraction of it on a
+    // pile. The *embodied* figure is what the food carried all along and was
+    // already counted when it was bought; it is reported here because it is the
+    // number that changes behaviour, and it is not added to the footprint again.
     const { emissions, activities: activityTable } = await import('../db/schema.js');
-    const wasteCarbon = await req.ctx.db.select({
+    const disposalCarbon = await req.ctx.db.select({
       total: sql<number>`coalesce(sum(${emissions.gCo2e}), 0)`,
     }).from(emissions)
       .innerJoin(activityTable, eq(activityTable.id, emissions.activityId))
@@ -514,10 +569,24 @@ export function foodRoutes(app: FastifyInstance): void {
         gte(activityTable.occurredOn, from),
         isNull(activityTable.deletedAt),
       ));
+
+    let embodied = 0;
+    for (const r of rows) {
+      if (!r.w.productId) continue;
+      const e = await wastedEmbodied(req.ctx, {
+        productId: r.w.productId, quantity: r.w.quantity, unit: r.w.unit,
+        occurredOn: r.w.ts.slice(0, 10),
+      });
+      embodied += e?.grams ?? 0;
+    }
+
     return {
       items: rows.map((r) => ({ ...r.w, product: r.product })),
       totalCost: rows.reduce((a, b) => a + (b.w.estCost ?? 0), 0),
-      totalGCo2e: Number(wasteCarbon[0]?.total ?? 0),
+      totalGCo2e: embodied,
+      embodiedGCo2e: embodied,
+      disposalGCo2e: Number(disposalCarbon[0]?.total ?? 0),
+      carbonNote: 'The embodied figure is what this food carried when it was grown and shipped — already counted when you bought it, shown here because it was spent for nothing. The disposal figure is the new emission from where it went.',
       byMonth: [...byMonth].sort().map(([month, v]) => ({ month, ...v })),
       byProduct: [...byProduct].map(([name, v]) => ({ name, ...v })).sort((a, b) => b.cost - a.cost).slice(0, 20),
       currency: req.ctx.household.currency,

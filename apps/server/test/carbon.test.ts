@@ -26,8 +26,13 @@ describe('the shipped factor library', () => {
     const activity = await h.api('POST', '/api/v1/carbon/activities', {
       type: 'electricity', amount: 1000, unit: 'kwh',
     });
-    // 1000 kWh at 0.05 kg, plus the separate upstream losses factor.
-    expect(activity.emissions.find((e: any) => e.factorKey === 'electricity.grid').gCo2e).toBe(50_000);
+    // 1000 kWh at 0.05 kg, plus the separate upstream losses factor. Correcting
+    // the headline figure scales the gas composition with it, so the correction
+    // actually takes effect rather than being quietly ignored.
+    const grid1000 = activity.emissions
+      .filter((e: any) => e.factorKey === 'electricity.grid')
+      .reduce((a: number, b: any) => a + b.gCo2e, 0);
+    expect(grid1000).toBeCloseTo(50_000, -2);
   });
 });
 
@@ -37,12 +42,12 @@ describe('recording an activity', () => {
     const res = await h.api('POST', '/api/v1/carbon/activities', {
       type: 'natural_gas', amount: 100, unit: 'therm',
     });
-    const keys = res.emissions.map((e: any) => e.factorKey).sort();
+    const keys = [...new Set(res.emissions.map((e: any) => e.factorKey))].sort();
     expect(keys).toEqual(['gas.combustion', 'gas.upstream']);
     // Burning it is scope 1; getting it to the meter is scope 3.
     expect(res.emissions.find((e: any) => e.factorKey === 'gas.combustion').scope).toBe(1);
     expect(res.emissions.find((e: any) => e.factorKey === 'gas.upstream').scope).toBe(3);
-    expect(res.gCo2e).toBe(531_000 + 102_000);
+    expect(res.gCo2e).toBeCloseTo(531_000 + 102_000, -3);
   });
 
   it('converts the quantity into the factor unit', async () => {
@@ -51,9 +56,9 @@ describe('recording an activity', () => {
     const res = await h.api('POST', '/api/v1/carbon/activities', {
       type: 'natural_gas', amount: 293.001, unit: 'kwh',
     });
-    const combustion = res.emissions.find((e: any) => e.factorKey === 'gas.combustion');
-    expect(combustion.quantityInFactorUnit).toBeCloseTo(10, 2);
-    expect(combustion.gCo2e).toBeCloseTo(53_100, -2);
+    const combustion = res.emissions.filter((e: any) => e.factorKey === 'gas.combustion');
+    expect(combustion[0].quantityInFactorUnit).toBeCloseTo(10, 2);
+    expect(combustion.reduce((a: number, b: any) => a + b.gCo2e, 0)).toBeCloseTo(53_100, -2);
   });
 
   it('stores a snapshot of the factor so history cannot be rewritten', async () => {
@@ -67,7 +72,7 @@ describe('recording an activity', () => {
 
     const after = await h.api('GET', '/api/v1/carbon/activities');
     expect(after.items[0].gCo2e).toBe(before);
-    expect(after.items[0].emissions[0].factorKgPerUnit).toBe(10.21);
+    expect(after.items[0].emissions[0].factorKgPerUnit).toBe(10.24);
   });
 
   it('refuses a dimensional mismatch rather than inventing a density', async () => {
@@ -100,18 +105,24 @@ describe('recalculation is explicit, never silent (GHG-005)', () => {
       from: shift(-5), to: today(), apply: false,
     });
     expect(preview.applied).toBe(false);
-    expect(preview.changed).toHaveLength(1);
-    expect(preview.changed[0]).toMatchObject({ was: 1_021_000, now: 1_200_000 });
+    // One row per gas now, so a single activity produces several changed rows.
+    expect(preview.changed.length).toBeGreaterThanOrEqual(1);
+    const wasTotal = preview.changed.reduce((a: number, c: any) => a + c.was, 0);
+    const nowTotal = preview.changed.reduce((a: number, c: any) => a + c.now, 0);
+    // Correcting 10.24 to 12 scales the whole composition by the same ratio.
+    expect(nowTotal / wasTotal).toBeCloseTo(12 / 10.24, 2);
 
     const untouched = await h.api('GET', '/api/v1/carbon/activities');
-    expect(untouched.items[0].gCo2e).toBe(1_021_000 + 180_000);
+    const before = untouched.items[0].gCo2e;
+    expect(before).toBeCloseTo(1_024_500 + 179_900, -3);
 
     const applied = await h.api('POST', '/api/v1/carbon/recalculate', {
       from: shift(-5), to: today(), apply: true,
     });
     expect(applied.applied).toBe(true);
     const now = await h.api('GET', '/api/v1/carbon/activities');
-    expect(now.items[0].gCo2e).toBe(1_200_000 + 180_000);
+    // Only the combustion factor was corrected; upstream is untouched.
+    expect(now.items[0].gCo2e).toBeCloseTo(before + (nowTotal - wasTotal), -2);
   });
 });
 
@@ -135,7 +146,16 @@ describe('one ledger for both measures (INT-007)', () => {
     const ledger = await h.api('GET', `/api/v1/ledger/asset/${boiler.id}`);
     expect(ledger.cost).toBe(68_900);
     expect(ledger.transactions).toBe(1);
-    expect(ledger.gCo2e).toBe(Math.round(212 * 10.21 * 1000) + Math.round(212 * 1.8 * 1000));
+    // Combustion and upstream, each now split into its constituent gases, so
+    // the total is the factors' own CO₂e — which includes the methane and
+    // nitrous oxide the old CO₂-only figure left out.
+    const oil = await h.api('GET', '/api/v1/carbon/factors?key=oil.combustion');
+    const upstream = await h.api('GET', '/api/v1/carbon/factors?key=oil.upstream');
+    const expected = Math.round(212 * oil.items[0].kgPerUnit * 1000)
+      + Math.round(212 * upstream.items[0].kgPerUnit * 1000);
+    // The headline kgPerUnit is rounded for display; the gas vector behind it
+    // is not, so the two agree to a fraction of a percent rather than exactly.
+    expect(ledger.gCo2e).toBeCloseTo(expected, -4);
     expect(ledger.activities).toBe(1);
 
     // And the asset itself carries both.
@@ -250,9 +270,11 @@ describe('the footprint (GHG-016)', () => {
     const explained = await h.api('GET', `/api/v1/carbon/explain?from=${shift(-5)}&to=${today()}`);
     expect(explained.items.length).toBeGreaterThanOrEqual(5);
     expect(explained.items.every((i: any) => i.factorKey && i.source)).toBe(true);
-    const beef = explained.items.find((i: any) => i.factorKey === 'food.beef');
-    expect(beef.factorKgPerUnit).toBe(60);
-    expect(beef.gCo2e).toBe(300_000);
+    const beefRows = explained.items.filter((i: any) => i.factorKey === 'food.beef');
+    expect(beefRows[0].factorKgPerUnit).toBe(60);
+    // Beef arrives as carbon dioxide, enteric methane and soil nitrous oxide.
+    expect(beefRows.reduce((a: number, b: any) => a + b.gCo2e, 0)).toBeCloseTo(300_000, -3);
+    expect(beefRows.map((r: any) => r.gas).sort()).toEqual(['ch4_bio', 'co2', 'n2o']);
   });
 
   it('tracks a target and paces it across the year', async () => {
@@ -453,8 +475,8 @@ describe('refrigerant is small in mass and large in effect (GHG-013)', () => {
     expect(res.record.title).toBe('Top up refrigerant');
 
     const ledger = await h.api('GET', `/api/v1/ledger/asset/${heatPump.id}`);
-    // 0.4 kg of R-410A is 0.4 x 2088 = 835 kg CO2e.
-    expect(ledger.gCo2e).toBe(835_200);
+    // 0.4 kg of R-410A at its AR6 hundred-year potential of 2256.
+    expect(ledger.gCo2e).toBe(902_400);
   });
 });
 
