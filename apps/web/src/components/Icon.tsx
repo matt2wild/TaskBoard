@@ -49,6 +49,8 @@ const PATHS: Record<string, string> = {
   undo: 'M3 7v6h6M3.5 13a9 9 0 1 0 2.1-5.6L3 10',
   external: 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3',
   leaf: 'M4 20c0-8 5-13 16-13 0 9-5 13-11 13H4zM4 20c2-5 5-8 9-10',
+  sprout: 'M12 21v-8M12 13c0-3-2-5-5-5H4c0 3 2 5 5 5zM12 13c0-4 2-6 5-6h3c0 4-2 6-5 6z',
+  recycle: 'M7 19H4.8a2 2 0 0 1-1.7-3l2.3-4M12 4.5l2.2 3.8M17 19h2.2a2 2 0 0 0 1.7-3l-3.3-5.7M9.4 8.3 7.2 12M14 19H9M10.5 21l-2-2 2-2M6.2 8.6l.7 2.8 2.8-.7M17.8 11.4l-2.8.7-.7-2.8',
 };
 
 export type IconName = keyof typeof PATHS | string;

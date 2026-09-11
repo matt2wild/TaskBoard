@@ -171,13 +171,15 @@ export function seedViability(
   if (seasons > viabilityYears) {
     return {
       seasons, viabilityYears, testedRate: null, status: 'past',
-      note: `${seasons} seasons old, past the ${viabilityYears}-year typical viability. Worth a germination test before sowing.`,
+      note: `${seasons} season${seasons === 1 ? '' : 's'} old, past the ${
+        viabilityYears}-year typical viability. Worth a germination test before sowing.`,
     };
   }
   if (seasons >= viabilityYears - 1) {
     return {
       seasons, viabilityYears, testedRate: null, status: 'ageing',
-      note: `${seasons} seasons old, near the end of its typical ${viabilityYears} years. Sow thickly or test it.`,
+      note: `${seasons} season${seasons === 1 ? '' : 's'} old, near the end of its typical ${
+        viabilityYears} year${viabilityYears === 1 ? '' : 's'}. Sow thickly or test it.`,
     };
   }
   return {

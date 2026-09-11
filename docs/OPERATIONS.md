@@ -123,6 +123,58 @@ Two ways a household's energy reaches the system, and they do not double count:
   measured, the bill attaches its cost to the existing activity rather than creating a
   second one.
 
+## Greenhouse gases and the horizon
+
+Emissions are stored as the mass of each gas, not as a single equivalent figure, and the
+equivalence is worked out when a report is read. That is what makes the horizon a control
+rather than a migration: switching a footprint between a hundred and twenty years
+recomputes from the stored masses and writes nothing.
+
+The distinction is not academic. Methane is about thirty times as warming as carbon dioxide
+over a century and about eighty times over twenty. In the shipped factors that works out as:
+
+| Factor | ×20yr / 100yr |
+|---|---|
+| Natural gas, upstream leakage | 2.2 |
+| Mixed waste to landfill | 2.8 |
+| Food waste to landfill | 2.9 |
+| R-32 refrigerant | 3.5 |
+| Beef | 1.7 |
+
+Footprint → Gases lists the registry with both potentials and a ratio column, and marks
+which gases the household has actually emitted. The default horizon is a household setting
+(Footprint → Gases → Default), recorded with a reason because it is an editorial decision
+rather than a technical one. Changing it never alters stored data.
+
+Where a published factor gives only a CO₂e figure — most food and material data — it is
+recorded as an **unspecified mixture** and cannot be re-evaluated at another horizon. The
+footprint page says what proportion of a total is in that state, so a small twenty-year
+difference is distinguishable from a total that simply cannot move.
+
+## Avoided emissions
+
+Composting, repairing and growing all produce a figure for what *would* have been emitted.
+These are held in a separate table, are reported beside the footprint, and are never
+subtracted from it. An avoided tonne is a statement about a world that did not happen;
+netting it against emissions that did is the most common dishonesty in carbon accounting,
+so the separation is structural rather than a matter of discipline. Every avoided figure
+carries its counterfactual in words.
+
+## Garden and compost
+
+Frost dates drive the sowing advice, and without them a variety cannot say whether today is
+too early or too late. Set them at Garden → Ready to sow, as `MM-DD`.
+
+The compost material library ships carbon-to-nitrogen ratios from the Cornell composting
+tables. The balance shown for a pile is the ratio of the totals, not the average of the
+ratios — twenty kilos of sawdust at 400:1 and twenty of grass at 17:1 make a pile at about
+38:1, not 208:1, because the sawdust brings almost no nitrogen to divide by.
+
+A pile's emission factor depends on how it is actually run. A turned hot pile or tumbler
+gets the managed factor; a cold pile, a trench, or a hot pile left unturned for five times
+its interval gets the anaerobic one, which is about twelve times higher. That is not a
+penalty, it is what an airless heap does.
+
 ## Health checks
 
 | Endpoint | Meaning |
@@ -153,3 +205,15 @@ no emission rows.
 **An intervention says it saves nothing.** It is measured against fuel this house has no
 record of burning. An induction range correctly shows zero saving in a house with no gas.
 The row says whether it is `measured` or `estimated`, and what it was measured from.
+
+**The twenty-year view is identical to the hundred-year one.** Nothing recorded has a
+published gas composition — most likely the footprint is mostly food and materials, whose
+sources give a single CO₂e figure. Footprint → Footprint states what proportion could be
+re-evaluated; if it reads 0%, there is nothing for the horizon to move.
+
+**The garden's net position says it is behind.** Common in a first season: new beds and
+bought soil emit a lot, and one summer's produce does not displace it. It is a real
+comparison, and it improves.
+
+**A sowing window says "too late" in the right month.** Check the frost dates. The windows
+are offsets in weeks from them, so a wrong last-spring date shifts every variety at once.

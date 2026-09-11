@@ -13,6 +13,9 @@ const NAV = [
   { to: '/projects', label: 'Projects', icon: 'hammer' },
   { to: '/budget', label: 'Budget', icon: 'coin' },
   { to: '/carbon', label: 'Footprint', icon: 'leaf' },
+  { to: '/garden', label: 'Garden', icon: 'sprout' },
+  { to: '/compost', label: 'Compost', icon: 'recycle' },
+  { to: '/circular', label: 'Repair & reuse', icon: 'repeat' },
   { to: '/food', label: 'Food', icon: 'can' },
   { to: '/storage', label: 'Storage', icon: 'box' },
   { to: '/tools', label: 'Tools', icon: 'toolbox' },
@@ -22,7 +25,7 @@ const NAV = [
   { to: '/settings', label: 'Settings', icon: 'settings' },
 ];
 
-/** The five things worth a thumb on a phone. */
+/** The five things worth a thumb on a phone. The rest live behind More. */
 const TABS = [
   { to: '/', label: 'Today', icon: 'home', end: true },
   { to: '/tasks', label: 'Tasks', icon: 'check' },

@@ -15,6 +15,9 @@ import { Assets, AssetDetail } from './pages/Assets';
 import { Projects, ProjectDetail } from './pages/Projects';
 import { Budget } from './pages/Budget';
 import { Carbon } from './pages/Carbon';
+import { Garden, PlantingDetail } from './pages/Garden';
+import { Compost } from './pages/Compost';
+import { Circular } from './pages/Circular';
 import { Food } from './pages/Food';
 import { Storage } from './pages/Storage';
 import { Tools } from './pages/Tools';
@@ -114,6 +117,10 @@ export function App() {
               <Route path="/projects/:id" element={<ProjectDetail />} />
               <Route path="/budget/*" element={<Budget />} />
               <Route path="/carbon" element={<Carbon />} />
+              <Route path="/garden" element={<Garden />} />
+              <Route path="/garden/plantings/:id" element={<PlantingDetail />} />
+              <Route path="/compost" element={<Compost />} />
+              <Route path="/circular" element={<Circular />} />
               <Route path="/food/*" element={<Food />} />
               <Route path="/storage/*" element={<Storage />} />
               <Route path="/tools/*" element={<Tools />} />

@@ -974,6 +974,284 @@ export async function seedDemo(db: DB, opts: { password?: string } = {}): Promis
     { recipeId: recipe!.id, text: 'Lemon', quantity: 1, unit: 'ea', sort: 2 },
   ]);
 
+  /* ── the garden, a season and a half of it ── */
+
+  // Frost dates for central Vermont, which is what makes the sowing advice real.
+  await db.update(s.properties)
+    .set({ profile: { ...(property!.profile ?? {}), lastFrost: '05-25', firstFrost: '09-22' } })
+    .where(eq(s.properties.id, property!.id));
+
+  const gardenLoc = await loc('Garden', 'zone', null);
+  const bed = async (name: string, areaSqft: number, method = 'raised', sort = 0) => {
+    const [row] = await db.insert(s.beds).values({
+      propertyId: property!.id, locationId: gardenLoc.id, name, method, areaSqft,
+      sun: 'full', irrigation: 'soaker hose', sort,
+      createdBy: admin!.id, updatedBy: admin!.id,
+    }).returning();
+    return row!;
+  };
+  const bed1 = await bed('Bed 1', 32, 'raised', 0);
+  const bed2 = await bed('Bed 2', 32, 'raised', 1);
+  const bed3 = await bed('Bed 3', 32, 'raised', 2);
+  const bed4 = await bed('Bed 4', 48, 'raised', 3);
+
+  const variety = async (name: string, cultivar?: string) => {
+    const rows = await db.select().from(s.plantVarieties).where(eq(s.plantVarieties.name, name));
+    return rows.find((v) => !cultivar || v.cultivar === cultivar) ?? rows[0]!;
+  };
+  const tomatoPaste = await variety('Tomato', 'Amish Paste');
+  const tomatoF1 = await variety('Tomato', 'Sungold');
+  const lettuce = await variety('Lettuce');
+  const kale = await variety('Kale');
+  const bushBean = await variety('Bush bean');
+  const courgette = await variety('Courgette');
+  const garlic = await variety('Garlic');
+
+  const seedShelf = await loc('Seed tin', 'container', basement.id, { shortCode: 'SEED' });
+  const thisYear = Number(today.slice(0, 4));
+
+  const seedLot = async (
+    varietyId: string, quantity: number, origin: string, yearPacked: number,
+    extra: Record<string, unknown> = {},
+  ) => {
+    const [row] = await db.insert(s.seedLots).values({
+      varietyId, quantity, unit: 'seed', origin, yearPacked, locationId: seedShelf.id,
+      createdBy: admin!.id, updatedBy: admin!.id, ...extra,
+    }).returning();
+    return row!;
+  };
+
+  // Last summer's paste tomatoes, saved from the best plant in Bed 2.
+  const oldTomatoPlanting = (await db.insert(s.plantings).values({
+    varietyId: tomatoPaste.id, bedId: bed2.id, method: 'indoor',
+    sownOn: `${thisYear - 1}-03-20`, transplantedOn: `${thisYear - 1}-05-30`,
+    expectedHarvestOn: `${thisYear - 1}-08-18`, quantity: 12, status: 'finished',
+    removedOn: `${thisYear - 1}-10-04`, notes: 'Heavy crop. Saved seed from the best plant.',
+    createdBy: admin!.id, updatedBy: admin!.id,
+  }).returning())[0]!;
+
+  const savedTomato = await seedLot(tomatoPaste.id, 34, 'saved', thisYear - 1, {
+    savedFromPlantingId: oldTomatoPlanting.id, cost: 0,
+    germinationRate: 0.88, testedOn: `${thisYear - 1}-11-02`,
+    notes: 'From the best plant in Bed 2. Tested in November.',
+  });
+  await seedLot(lettuce.id, 400, 'bought', thisYear, { cost: 349 });
+  await seedLot(kale.id, 180, 'bought', thisYear - 1, { cost: 299 });
+  await seedLot(bushBean.id, 120, 'swapped', thisYear - 1, { cost: 0, notes: 'From the seed swap at the library.' });
+  // Deliberately past its viability, so the drawer has something to warn about.
+  await seedLot(courgette.id, 22, 'bought', thisYear - 6, { cost: 399 });
+  await seedLot(garlic.id, 40, 'saved', thisYear - 1, { cost: 0, notes: 'Cloves held back from last year.' });
+
+  const planting = async (
+    varietyId: string, bedId: string, sownOn: string, extra: Record<string, unknown> = {},
+  ) => {
+    const [row] = await db.insert(s.plantings).values({
+      varietyId, bedId, sownOn, method: 'direct', status: 'growing', quantity: 12,
+      createdBy: admin!.id, updatedBy: admin!.id, ...extra,
+    }).returning();
+    return row!;
+  };
+
+  // This year, sown from the seed saved two summers ago — into Bed 4, because
+  // Bed 2 had Solanaceae in it last season.
+  const tomatoThisYear = await planting(tomatoPaste.id, bed4.id, addDays(today, -96), {
+    seedLotId: savedTomato.id, method: 'indoor',
+    transplantedOn: addDays(today, -54), expectedHarvestOn: addDays(today, 26),
+    quantity: 12, status: 'growing',
+    notes: 'Sown from our own saved seed. Bed 4 to keep off last year\u2019s ground.',
+  });
+  const kaleThisYear = await planting(kale.id, bed1.id, addDays(today, -70), {
+    expectedHarvestOn: addDays(today, -10), status: 'harvesting', quantity: 8,
+  });
+  await planting(lettuce.id, bed3.id, addDays(today, -28), {
+    expectedHarvestOn: addDays(today, 22), quantity: 20,
+  });
+  await planting(lettuce.id, bed3.id, addDays(today, -14), {
+    expectedHarvestOn: addDays(today, 36), quantity: 20, notes: 'Second sowing of the succession.',
+  });
+  await planting(bushBean.id, bed2.id, addDays(today, -45), {
+    expectedHarvestOn: addDays(today, 10), quantity: 30,
+  });
+  // One that did not work, because a garden record that only holds successes
+  // is not a record.
+  await planting(courgette.id, bed4.id, addDays(today, -80), {
+    status: 'failed', removedOn: addDays(today, -35),
+    failureReason: 'Squash vine borer took both plants. Old seed, poor stand to begin with.',
+  });
+  await db.insert(s.gardenObservations).values([
+    {
+      plantingId: tomatoThisYear.id, observedOn: addDays(today, -20), kind: 'disease',
+      text: 'Early blight on the lower leaves. Stripped them and mulched.', createdBy: admin!.id,
+    },
+    {
+      plantingId: kaleThisYear.id, observedOn: addDays(today, -12), kind: 'pest',
+      text: 'Cabbage whites. Netted it.', createdBy: admin!.id,
+    },
+  ]);
+
+  // Through the real service, so the demo's values, pantry stock and displaced
+  // figures are computed by the code a household would actually run.
+  const { recordHarvest } = await import('../services/garden.js');
+  for (const [i, lb] of [1.4, 2.1, 1.8, 2.6].entries()) {
+    await recordHarvest(ctx, {
+      plantingId: kaleThisYear.id, harvestedOn: addDays(today, -9 + i * 3),
+      quantity: lb, unit: 'lb', toPantry: { locationId: fridge.id },
+    });
+  }
+
+  /* ── compost ── */
+
+  const [heap] = await db.insert(s.compostSystems).values({
+    name: 'The heap', method: 'hot_pile', locationId: gardenLoc.id,
+    capacity: 36, capacityUnit: 'cuft', activeFrom: addDays(today, -120), status: 'active',
+    notes: 'Two pallets and a bit of chicken wire.',
+    createdBy: admin!.id, updatedBy: admin!.id,
+  }).returning();
+
+  const [tumbler] = await db.insert(s.compostSystems).values({
+    name: 'Kitchen tumbler', method: 'tumbler', locationId: gardenLoc.id,
+    capacity: 8, capacityUnit: 'cuft', activeFrom: addDays(today, -60), status: 'active',
+    createdBy: admin!.id, updatedBy: admin!.id,
+  }).returning();
+
+  // Through the real service, so the demo's emissions and avoided figures are
+  // computed by the same code a household would use rather than written by hand.
+  const { addCompostInput } = await import('../services/compost.js');
+  const compostIn = (systemId: string, materialKey: string, kg: number, on: string) =>
+    addCompostInput(ctx, { systemId, materialKey, quantity: kg, unit: 'kg', occurredOn: on });
+
+  // Build the pile through the season, roughly in balance.
+  const inputs: Array<[string, string, number, number]> = [
+    [heap!.id, 'kitchen_scraps', 6.5, -110],
+    [heap!.id, 'dry_leaves', 9, -108],
+    [heap!.id, 'grass_clippings', 12, -84],
+    [heap!.id, 'straw', 7, -82],
+    [heap!.id, 'kitchen_scraps', 8.2, -60],
+    [heap!.id, 'coffee_grounds', 2.4, -58],
+    [heap!.id, 'dry_leaves', 11, -55],
+    [heap!.id, 'spent_plants', 14, -35],
+    [heap!.id, 'kitchen_scraps', 7.1, -20],
+    [heap!.id, 'cardboard', 3.5, -18],
+    [tumbler!.id, 'kitchen_scraps', 4.2, -30],
+    [tumbler!.id, 'dry_leaves', 2.8, -29],
+    [tumbler!.id, 'kitchen_scraps', 3.6, -9],
+  ];
+  for (const [systemId, key, kg, dayOffset] of inputs) {
+    await compostIn(systemId, key, kg, addDays(today, dayOffset));
+  }
+
+  // The pile is managed by temperature, so give it a real curve.
+  const temps: Array<[number, number]> = [
+    [-105, 96], [-100, 138], [-95, 152], [-90, 146], [-84, 131], [-78, 118],
+    [-70, 142], [-62, 149], [-54, 137], [-45, 124], [-36, 116], [-28, 148],
+    [-20, 151], [-12, 143], [-5, 134], [-1, 129],
+  ];
+  for (const [dayOffset, f] of temps) {
+    await db.insert(s.compostEvents).values({
+      systemId: heap!.id, kind: 'temperature', occurredOn: addDays(today, dayOffset),
+      temperatureF: f, createdBy: admin!.id, updatedBy: admin!.id,
+    });
+  }
+  for (const dayOffset of [-102, -96, -88, -80, -72, -64, -56, -48, -40, -32, -24, -16, -8]) {
+    await db.insert(s.compostEvents).values({
+      systemId: heap!.id, kind: 'turned', occurredOn: addDays(today, dayOffset),
+      createdBy: admin!.id, updatedBy: admin!.id,
+    });
+  }
+
+  await db.insert(s.compostOutputs).values([
+    {
+      systemId: heap!.id, occurredOn: addDays(today, -40), quantity: 8, unit: 'cuft',
+      bedId: bed1.id, estValue: 4000, note: 'Top-dressed the kale.',
+      createdBy: admin!.id, updatedBy: admin!.id,
+    },
+    {
+      systemId: heap!.id, occurredOn: addDays(today, -12), quantity: 6, unit: 'cuft',
+      bedId: bed4.id, estValue: 3000, createdBy: admin!.id, updatedBy: admin!.id,
+    },
+  ]);
+
+  /* ── repairs, and what they did not have manufactured ── */
+
+  await db.insert(s.repairs).values([
+    {
+      targetType: 'asset', targetId: fridgeAsset.id, occurredOn: addDays(today, -210),
+      symptom: 'Warm on the top shelf, running constantly',
+      workDone: 'Cleaned the condenser coils and replaced the door gasket',
+      partsCost: 4200, timeMin: 75, byUserId: admin!.id, outcome: 'fixed',
+      extendedLifeYears: 4, avoidedCost: 62_829, avoidedGCo2e: 142_857,
+      notes: 'The gasket was the whole problem. Ten minutes of work and a part off the internet.',
+      createdBy: admin!.id, updatedBy: admin!.id,
+    },
+    {
+      targetType: 'asset', targetId: sumpPump.id, occurredOn: addDays(today, -95),
+      symptom: 'Float switch sticking',
+      workDone: 'New tethered float; the old one was fouling on the pit wall',
+      partsCost: 2800, timeMin: 40, byUserId: admin!.id, outcome: 'fixed',
+      extendedLifeYears: 3, avoidedCost: 7875, avoidedGCo2e: 45_000,
+      createdBy: admin!.id, updatedBy: admin!.id,
+    },
+    {
+      targetText: 'Kitchen chair', occurredOn: addDays(today, -48),
+      symptom: 'Back leg loose', workDone: 'Knocked apart, cleaned the joint, re-glued and clamped overnight',
+      partsCost: 0, timeMin: 30, byUserId: admin!.id, outcome: 'fixed',
+      extendedLifeYears: 10, avoidedCost: 0, avoidedGCo2e: 200_000,
+      createdBy: admin!.id, updatedBy: admin!.id,
+    },
+    {
+      targetType: 'asset', targetId: waterHeater.id, occurredOn: addDays(today, -22),
+      symptom: 'Pilot would not stay lit',
+      workDone: 'Replaced the thermocouple. Still going out after a week.',
+      partsCost: 1800, timeMin: 55, byUserId: admin!.id, outcome: 'failed',
+      notes: 'Gas valve, probably. Booked the plumber.',
+      createdBy: admin!.id, updatedBy: admin!.id,
+    },
+  ]);
+
+  await db.insert(s.circulationEvents).values([
+    {
+      kind: 'given', itemText: 'Two boxes of leftover subway tile', occurredOn: addDays(today, -30),
+      value: 4500, note: 'To the neighbour doing their downstairs loo.',
+      createdBy: admin!.id, updatedBy: admin!.id,
+    },
+    {
+      kind: 'repurposed', itemText: 'Pallets from the tile delivery', occurredOn: addDays(today, -120),
+      note: 'Became the compost bay.', createdBy: admin!.id, updatedBy: admin!.id,
+    },
+    {
+      kind: 'swapped', itemText: 'Bush bean seed', occurredOn: addDays(today, -180),
+      note: 'Seed swap at the library. Gave away kale, came back with beans.',
+      createdBy: admin!.id, updatedBy: admin!.id,
+    },
+    {
+      kind: 'salvaged', itemText: 'Cast iron radiator from the skip on Alder Lane',
+      occurredOn: addDays(today, -64), value: 12_000,
+      createdBy: admin!.id, updatedBy: admin!.id,
+    },
+  ]);
+
+  // The avoided ledger, kept apart from the footprint on purpose.
+  await db.insert(s.avoidedEmissions).values([
+    {
+      sourceType: 'repair', sourceId: 'demo-fridge', occurredOn: addDays(today, -210),
+      counterfactual: 'A typical replacement refrigerator, not bought — 29% of its embodied carbon, for the 4 years this repair bought.',
+      gCo2e100: 142_857, gCo2e20: 142_857, cost: 62_829, category: 'repair',
+      createdBy: admin!.id, updatedBy: admin!.id,
+    },
+    {
+      sourceType: 'repair', sourceId: 'demo-sump', occurredOn: addDays(today, -95),
+      counterfactual: 'A typical replacement sump pump, not bought — 38% of its embodied carbon, for the 3 years this repair bought.',
+      gCo2e100: 45_000, gCo2e20: 45_000, cost: 7875, category: 'repair',
+      createdBy: admin!.id, updatedBy: admin!.id,
+    },
+    {
+      sourceType: 'repair', sourceId: 'demo-chair', occurredOn: addDays(today, -48),
+      counterfactual: 'A kitchen chair, not bought.',
+      gCo2e100: 200_000, gCo2e20: 200_000, cost: 0, category: 'repair',
+      createdBy: admin!.id, updatedBy: admin!.id,
+    },
+  ]);
+
   /* ── generate the schedule instances and doses ── */
 
   const mat = await materialiseAll(ctx);
@@ -996,6 +1274,9 @@ export async function seedDemo(db: DB, opts: { password?: string } = {}): Promis
     ['stockItems', s.stockItems], ['transactions', s.transactions], ['maintenancePlans', s.maintenancePlans],
     ['tasks', s.tasks], ['pets', s.pets], ['storageItems', s.storageItems], ['contacts', s.contacts],
     ['activities', s.activities], ['emissions', s.emissions], ['interventions', s.interventions],
+    ['beds', s.beds], ['plantings', s.plantings], ['seedLots', s.seedLots],
+    ['harvests', s.harvests], ['compostInputs', s.compostInputs], ['repairs', s.repairs],
+    ['avoidedEmissions', s.avoidedEmissions],
   ] as Array<[string, any]>) {
     const r = await db.select().from(table);
     counts[name] = r.length;

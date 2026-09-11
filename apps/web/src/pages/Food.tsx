@@ -3,7 +3,7 @@ import { formatCo2e } from '@homestead/shared';
 import { api } from '../lib/api';
 import { useDebounced, useQuery } from '../lib/hooks';
 import { useApp } from '../App';
-import { dateLabel, money, quantity } from '../lib/format';
+import { dateLabel, money, quantity, titleCase } from '../lib/format';
 import { Icon } from '../components/Icon';
 import { EmptyState, Field, Modal, Panel, Spinner, StatTile, Tabs, useToast } from '../components/ui';
 
@@ -38,9 +38,11 @@ function Pantry() {
   const { data, loading, reload } = useQuery<any>(path, [groupBy, foodOnly]);
   const toast = useToast();
 
+  const [wasting, setWasting] = useState<{ id: string; label: string; quantity: number } | null>(null);
+
   const adjust = async (id: string, action: string, label: string) => {
     await api.post(`/stock/${id}/adjust`, { action });
-    toast.push({ message: action === 'waste' ? `Binned ${label}` : `Used ${label}` });
+    toast.push({ message: `Used ${label}` });
     reload();
   };
 
@@ -93,7 +95,7 @@ function Pantry() {
                             onClick={() => adjust(s.id, 'open', s.product.name)}>Open</button>
                   )}
                   <button className="btn btn-sm btn-ghost" title="Throw away"
-                          onClick={() => adjust(s.id, 'waste', s.product.name)}>
+                          onClick={() => setWasting({ id: s.id, label: s.product.name, quantity: 1 })}>
                     <Icon name="trash" size={12} />
                   </button>
                 </div>
@@ -102,7 +104,84 @@ function Pantry() {
           </ul>
         </Panel>
       ))}
+      <WasteSheet target={wasting} onClose={() => setWasting(null)}
+                  onDone={() => { setWasting(null); reload(); }} />
     </div>
+  );
+}
+
+/**
+ * One control, every route the household actually has (INT-010). Choosing the
+ * pile rather than the bin writes the stock movement, the compost input, the
+ * pile's own emission and the avoided landfill methane in a single action.
+ */
+function WasteSheet({ target, onClose, onDone }: {
+  target: { id: string; label: string; quantity: number } | null;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const systems = useQuery<any>(target ? '/compost/systems?limit=20' : null, [target?.id]);
+  const [route, setRoute] = useState<'bin' | 'compost'>('bin');
+  const [reason, setReason] = useState('expired');
+  const [result, setResult] = useState<any>(null);
+  const toast = useToast();
+
+  const piles = systems.data?.items ?? [];
+
+  const save = async () => {
+    const res = await api.post(`/stock/${target!.id}/adjust`, {
+      action: 'waste', quantity: target!.quantity, wasteReason: reason,
+      route: piles.length ? route : 'bin',
+    });
+    setResult(res);
+    toast.push({ message: route === 'compost' ? `${target!.label} on the pile` : `Binned ${target!.label}` });
+  };
+  const close = () => { setResult(null); setRoute('bin'); onDone(); };
+
+  return (
+    <Modal open={!!target} onClose={onClose} title={target ? `Throw out ${target.label}` : ''}
+           footer={<>
+             <button className="btn" onClick={result ? close : onClose}>
+               {result ? 'Done' : 'Cancel'}
+             </button>
+             {!result && <button className="btn btn-primary" onClick={save}>Record it</button>}
+           </>}>
+      <Field label="Why">
+        <select className="input" value={reason} onChange={(e) => setReason(e.target.value)}>
+          {['expired', 'spoiled', 'leftover', 'freezer_burn', 'overbought', 'other'].map((r) =>
+            <option key={r} value={r}>{titleCase(r)}</option>)}
+        </select>
+      </Field>
+      {piles.length > 0 && (
+        <Field label="Where it goes"
+               hint="The same food makes methane in a landfill and mostly carbon dioxide on a pile. Over twenty years the difference is not marginal.">
+          <select className="input" value={route}
+                  onChange={(e) => setRoute(e.target.value as 'bin' | 'compost')}>
+            <option value="bin">The bin</option>
+            <option value="compost">{piles[0].name}</option>
+          </select>
+        </Field>
+      )}
+      {result && (
+        <div className="panel p-3 space-y-1">
+          <p className="text-sm">
+            {formatCo2e(result.wastedGCo2e)} of embodied carbon thrown away — already counted
+            when you bought it, shown because it was spent for nothing.
+          </p>
+          {result.disposalGCo2e != null && (
+            <p className="dim text-sm">
+              The disposal itself emitted {formatCo2e(result.disposalGCo2e)}.
+            </p>
+          )}
+          {result.avoided && (
+            <p className="dim text-sm">
+              Composting it avoided {formatCo2e(result.avoided.gCo2e100)} against the bin, or{' '}
+              {formatCo2e(result.avoided.gCo2e20)} over twenty years.
+            </p>
+          )}
+        </div>
+      )}
+    </Modal>
   );
 }
 
@@ -472,13 +551,16 @@ function Waste() {
   }
   return (
     <div className="space-y-4">
-      <div className="grid sm:grid-cols-2 gap-3">
+      <div className="grid sm:grid-cols-3 gap-3">
         <StatTile label="Wasted in the last 6 months" value={money(data.totalCost, app.currency)}
                   sub={`${data.items.length} items`} icon="trash" tone="warn" />
-        {/* Food thrown out carries its whole footprint for nothing (GHG-011). */}
-        <StatTile label="Carbon thrown out with it" value={formatCo2e(data.totalGCo2e)}
+        {/* Two different numbers, and conflating them would be a lie. */}
+        <StatTile label="Carbon thrown out with it" value={formatCo2e(data.embodiedGCo2e)}
                   sub="grown, shipped and chilled for the bin" icon="leaf" tone="warn" />
+        <StatTile label="Emitted by the disposal" value={formatCo2e(data.disposalGCo2e)}
+                  sub="landfill methane, or a fraction of it on a pile" icon="recycle" />
       </div>
+      <p className="dim text-sm">{data.carbonNote}</p>
       <Panel title="Most wasted" dense>
         <table className="table">
           <thead><tr><th>Product</th><th className="text-right">Times</th><th className="text-right">Cost</th></tr></thead>

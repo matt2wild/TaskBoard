@@ -153,6 +153,47 @@ function AddAsset({ open, onClose, onDone }: { open: boolean; onClose: () => voi
   );
 }
 
+/** What repairing this thing has bought, and not had manufactured (CIRC-002). */
+function Repairs({ assetId, currency }: { assetId: string; currency: string }) {
+  const { data, loading } = useQuery<any>(`/assets/${assetId}/circularity`);
+  if (loading || !data?.repairs.length) return null;
+  return (
+    <Panel title="Repairs" dense
+           action={<span className="dim text-xs">
+             {formatCo2e(data.avoidedGCo2e)} and {money(data.avoidedCost, currency)} not spent
+           </span>}>
+      <table className="table">
+        <tbody>
+          {data.repairs.map((r: any) => (
+            <tr key={r.id}>
+              <td className="dim whitespace-nowrap">{r.occurredOn}</td>
+              <td>
+                {r.symptom}
+                {r.workDone && <span className="dim block text-xs">{r.workDone}</span>}
+              </td>
+              <td className="text-right">
+                <span className={`chip ${r.outcome === 'failed' ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300' : ''}`}>
+                  {r.outcome}
+                </span>
+              </td>
+              <td className="text-right tabular-nums whitespace-nowrap">
+                {money(r.partsCost, currency)}
+                {r.extendedLifeYears && (
+                  <span className="dim block text-xs">+{r.extendedLifeYears}y</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="dim text-xs px-4 py-2">
+        Against {formatCo2e(data.embodied.grams)} embodied in {data.embodied.basis}. The
+        avoided figure is a counterfactual and is not subtracted from the footprint.
+      </p>
+    </Panel>
+  );
+}
+
 export function AssetDetail() {
   const { id } = useParams();
   const app = useApp();
@@ -203,7 +244,10 @@ export function AssetDetail() {
                   sub={a.warrantyExpiry ?? undefined} icon="file"
                   tone={a.warrantyDaysLeft != null && a.warrantyDaysLeft < 60 && a.warrantyDaysLeft >= 0 ? 'warn' : 'default'} />
         <StatTile label="Replace by" value={a.replacementYear ?? '—'}
-                  sub={a.replacementCostEstimate ? money(a.replacementCostEstimate, app.currency) : 'no estimate'}
+                  sub={a.lifeExtendedYears
+                    ? `${a.lifeExtendedYears}y bought by repairs`
+                    : a.replacementCostEstimate ? money(a.replacementCostEstimate, app.currency) : 'no estimate'}
+                  tone={a.lifeExtendedYears ? 'good' : 'default'}
                   icon="repeat" />
         {/* What it has cost and what it has emitted come from the same ledger. */}
         <StatTile label="Emitted" value={formatCo2e(a.gCo2e)} icon="leaf"
@@ -211,6 +255,8 @@ export function AssetDetail() {
                     ? `${timeline.data.carbon.count} activities`
                     : 'nothing attributed yet'} />
       </div>
+
+      <Repairs assetId={id!} currency={app.currency} />
 
       {a.notesMd && <Panel title="Notes"><p className="text-sm whitespace-pre-line">{a.notesMd}</p></Panel>}
 

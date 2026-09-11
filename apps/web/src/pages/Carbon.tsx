@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ACTIVITY_TYPES, formatCo2e } from '@homestead/shared';
+import { ACTIVITY_TYPES, formatCo2e, formatGasMass } from '@homestead/shared';
 import { api } from '../lib/api';
 import { useQuery } from '../lib/hooks';
 import { useApp, useGo } from '../App';
@@ -9,7 +9,7 @@ import {
   EmptyState, ErrorNote, Field, Modal, Panel, Progress, Spinner, StatTile, Tabs, useToast,
 } from '../components/ui';
 
-type Tab = 'footprint' | 'energy' | 'interventions' | 'factors';
+type Tab = 'footprint' | 'gases' | 'energy' | 'interventions' | 'factors';
 
 /** Carbon is the household's second unit of account, so it gets a screen of
  *  its own as well as a line on every other one. */
@@ -29,11 +29,13 @@ export function Carbon() {
       </header>
       <Tabs<Tab> active={tab} onChange={setTab} tabs={[
         { id: 'footprint', label: 'Footprint' },
+        { id: 'gases', label: 'Gases' },
         { id: 'energy', label: 'Energy' },
         { id: 'interventions', label: 'What to do' },
         { id: 'factors', label: 'Factors' },
       ]} />
       {tab === 'footprint' && <FootprintView year={year} setYear={setYear} />}
+      {tab === 'gases' && <GasesView />}
       {tab === 'energy' && <EnergyView />}
       {tab === 'interventions' && <Interventions />}
       {tab === 'factors' && <Factors />}
@@ -48,7 +50,9 @@ const SCOPE_TONE = ['', 'bad', 'warn', 'default'] as const;
 
 function FootprintView({ year, setYear }: { year: string; setYear: (y: string) => void }) {
   const app = useApp();
-  const { data, error, loading, reload } = useQuery<any>(`/carbon/footprint?year=${year}`, [year]);
+  const [horizon, setHorizon] = useState<100 | 20 | null>(null);
+  const query = `/carbon/footprint?year=${year}${horizon ? `&horizon=${horizon}` : ''}`;
+  const { data, error, loading, reload } = useQuery<any>(query, [query]);
   const [drill, setDrill] = useState<{ category?: string; scope?: number; label: string } | null>(null);
   const [editTarget, setEditTarget] = useState(false);
   const thisYear = Number(app.today.slice(0, 4));
@@ -73,10 +77,37 @@ function FootprintView({ year, setYear }: { year: string; setYear: (y: string) =
             <Icon name="chevron" size={13} />
           </button>
         </div>
-        <button className="btn btn-sm" onClick={() => setEditTarget(true)}>
-          <Icon name="target" size={13} /> {target ? 'Change target' : 'Set a target'}
-        </button>
+        <div className="flex gap-2">
+          {/* Switching horizon recomputes from the stored gas masses. Nothing
+              is written, which is why it is a control and not a setting. */}
+          <div className="flex gap-1">
+            {[100, 20].map((hz) => (
+              <button key={hz}
+                      className={`btn btn-sm ${data.horizon === hz ? 'btn-primary' : ''}`}
+                      onClick={() => setHorizon(hz as 100 | 20)}>
+                {hz} yr
+              </button>
+            ))}
+          </div>
+          <button className="btn btn-sm" onClick={() => setEditTarget(true)}>
+            <Icon name="target" size={13} /> {target ? 'Change target' : 'Set a target'}
+          </button>
+        </div>
       </div>
+
+      {data.atOtherHorizon.reEvaluablePct > 0 && data.atOtherHorizon.ratio !== 1 && (
+        <p className="dim text-sm">
+          Read over {data.horizon} years. Over {data.atOtherHorizon.horizon} it comes to{' '}
+          <strong>{formatCo2e(data.atOtherHorizon.total)}</strong>
+          {data.atOtherHorizon.ratio > 1
+            ? ` — ${Math.round((data.atOtherHorizon.ratio - 1) * 100)}% more, because methane does most of its warming early.`
+            : ` — ${Math.round((1 - data.atOtherHorizon.ratio) * 100)}% less.`}
+          {data.atOtherHorizon.reEvaluablePct < 100 && (
+            <> Only {data.atOtherHorizon.reEvaluablePct}% of this total has a published gas
+            composition; the rest is carried through as an unspecified mixture.</>
+          )}
+        </p>
+      )}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatTile label={`Emitted in ${year}`} value={formatCo2e(total)} icon="chart"
@@ -132,6 +163,52 @@ function FootprintView({ year, setYear }: { year: string; setYear: (y: string) =
           {!data.scopes.length && <p className="dim text-sm">Nothing recorded for {year} yet.</p>}
         </div>
       </Panel>
+
+      {!!data.gases?.length && (
+        <Panel title="Which gases" dense
+               action={<span className="dim text-xs">at {data.horizon} years</span>}>
+          <table className="table">
+            <tbody>
+              {data.gases.map((g: any) => (
+                <tr key={g.gas}>
+                  <td>
+                    {g.name}
+                    {g.formula && <span className="dim ml-1.5 text-xs">{g.formula}</span>}
+                    {g.biogenic && <span className="chip ml-2">biogenic</span>}
+                    {g.horizonSensitive && <span className="chip ml-1">horizon-sensitive</span>}
+                  </td>
+                  <td className="text-right tabular-nums dim text-xs">
+                    {formatGasMass(g.massMg)} of gas
+                  </td>
+                  <td className="text-right tabular-nums">{formatCo2e(g.total)}</td>
+                  <td className="text-right tabular-nums dim w-14">{g.pct}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Panel>
+      )}
+
+      {!!data.avoided?.count && (
+        <Panel title="Avoided, and kept out of the total above"
+               action={<span className="dim text-xs">counterfactual</span>}>
+          <div className="grid sm:grid-cols-3 gap-3">
+            <div>
+              <div className="dim text-xs">Over a hundred years</div>
+              <div className="text-xl font-semibold tabular-nums">{formatCo2e(data.avoided.total100)}</div>
+            </div>
+            <div>
+              <div className="dim text-xs">Over twenty</div>
+              <div className="text-xl font-semibold tabular-nums">{formatCo2e(data.avoided.total20)}</div>
+            </div>
+            <div>
+              <div className="dim text-xs">Money not spent</div>
+              <div className="text-xl font-semibold tabular-nums">{money(data.avoided.cost, app.currency)}</div>
+            </div>
+          </div>
+          <p className="dim text-sm mt-2">{data.avoided.note}</p>
+        </Panel>
+      )}
 
       {data.byMonth.length > 1 && (
         <Panel title="Month by month">
@@ -233,7 +310,7 @@ function Explain({ open, onClose, year, drill }: {
           <thead>
             <tr>
               <th>Date</th><th>What</th><th className="text-right">Amount</th>
-              <th>Factor</th><th className="text-right">CO₂e</th>
+              <th>Factor</th><th>Gas</th><th className="text-right">CO₂e</th>
             </tr>
           </thead>
           <tbody>
@@ -250,6 +327,12 @@ function Explain({ open, onClose, year, drill }: {
                   <span className="dim block">
                     {r.factorKgPerUnit} kg/{r.factorUnit}{r.source ? ` · ${r.source}` : ''}
                   </span>
+                </td>
+                <td className="text-xs whitespace-nowrap">
+                  {r.gas === 'co2e' ? <span className="dim">mixture</span> : r.gas}
+                  {r.gas !== 'co2e' && (
+                    <span className="dim block">{formatGasMass(r.massMg)} × {r.gwp}</span>
+                  )}
                 </td>
                 <td className="text-right tabular-nums whitespace-nowrap">{formatCo2e(r.gCo2e)}</td>
               </tr>
@@ -292,6 +375,140 @@ function TargetModal({ open, onClose, year, current, onSaved }: {
         The year is paced across the months by heating season, not split in twelve,
         so a cold January is not read as failure.
       </p>
+    </Modal>
+  );
+}
+
+/* ───────────────────────────────── gases ─────────────────────────────────── */
+
+/**
+ * The registry, with what each gas is worth at each horizon. The ratio column
+ * is the point: it says which gases the choice of horizon actually moves.
+ */
+function GasesView() {
+  const { data, error, loading, reload } = useQuery<any>('/carbon/gases');
+  const [setting, setSetting] = useState(false);
+  if (error) return <ErrorNote error={error} retry={reload} />;
+  if (loading && !data) return <Spinner />;
+  if (!data) return null;
+
+  const recorded = data.items.filter((g: any) => g.recorded);
+  const rest = data.items.filter((g: any) => !g.recorded);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <p className="dim text-sm max-w-3xl">
+          Carbon dioxide equivalent is a convenience, and it hides the thing that matters.
+          Methane is about thirty times as warming as CO₂ over a century and about eighty
+          times over twenty years, because it is a strong absorber that leaves the atmosphere
+          quickly. This system stores the gases and derives the equivalence, so the horizon
+          is a way of reading the record rather than a property of it.
+        </p>
+        <button className="btn btn-sm" onClick={() => setSetting(true)}>
+          <Icon name="settings" size={13} /> Default: {data.horizon} yr
+        </button>
+      </div>
+
+      {!!recorded.length && (
+        <Panel title="Gases this household has actually emitted" dense>
+          <GasTable rows={recorded} horizon={data.horizon} />
+        </Panel>
+      )}
+      <Panel title={recorded.length ? 'The rest of the registry' : 'The gas registry'} dense>
+        <GasTable rows={rest} horizon={data.horizon} />
+      </Panel>
+
+      <HorizonModal open={setting} onClose={() => setSetting(false)}
+                    current={data.horizon} onSaved={reload} />
+    </div>
+  );
+}
+
+function GasTable({ rows, horizon }: { rows: any[]; horizon: number }) {
+  return (
+    <div className="overflow-x-auto scroll-thin">
+      <table className="table">
+        <thead>
+          <tr>
+            <th>Gas</th>
+            <th className="text-right">100 yr</th>
+            <th className="text-right">20 yr</th>
+            <th className="text-right">Ratio</th>
+            <th className="text-right">Emitted</th>
+            <th>Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((g: any) => (
+            <tr key={g.key}>
+              <td>
+                <div className="font-medium">
+                  {g.name}
+                  {g.formula && <span className="dim ml-1.5 text-xs">{g.formula}</span>}
+                </div>
+                {g.notes && <div className="dim text-xs max-w-md">{g.notes}</div>}
+              </td>
+              <td className="text-right tabular-nums">{g.gwp100.toLocaleString()}</td>
+              <td className="text-right tabular-nums">{g.gwp20.toLocaleString()}</td>
+              <td className={`text-right tabular-nums ${
+                g.horizonRatio >= 2 ? 'text-amber-600 dark:text-amber-400 font-medium' : 'dim'}`}>
+                ×{g.horizonRatio}
+              </td>
+              <td className="text-right tabular-nums whitespace-nowrap">
+                {g.recorded ? (
+                  <>
+                    {formatGasMass(g.recorded.gMass ?? g.recorded.massMg)}
+                    <span className="dim block text-xs">{formatCo2e(g.recorded.gCo2e)}</span>
+                  </>
+                ) : <span className="dim">—</span>}
+              </td>
+              <td className="dim text-xs">{g.source}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function HorizonModal({ open, onClose, current, onSaved }: {
+  open: boolean; onClose: () => void; current: number; onSaved: () => void;
+}) {
+  const [horizon, setHorizon] = useState<100 | 20>(current === 20 ? 20 : 100);
+  const [reason, setReason] = useState('');
+  const [result, setResult] = useState<any>(null);
+  const toast = useToast();
+
+  const save = async () => {
+    const res = await api.put('/carbon/horizon', { horizon, reason: reason || null });
+    setResult(res);
+    toast.push({ message: `Reporting over ${horizon} years` });
+    onSaved();
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Default reporting horizon"
+           footer={<>
+             <button className="btn" onClick={onClose}>Done</button>
+             <button className="btn btn-primary" onClick={save}>Save</button>
+           </>}>
+      <p className="dim text-sm mb-3">
+        This is an editorial decision rather than a technical one, so it is recorded with a
+        reason. Nothing already stored changes: every report recomputes from the gas masses.
+      </p>
+      <Field label="Horizon">
+        <select className="input" value={horizon}
+                onChange={(e) => setHorizon(Number(e.target.value) as 100 | 20)}>
+          <option value={100}>100 years — the convention in national inventories</option>
+          <option value={20}>20 years — closer to the timescale most decisions are made on</option>
+        </select>
+      </Field>
+      <Field label="Why" hint="Worth a sentence; you will not remember in a year.">
+        <input className="input" value={reason} onChange={(e) => setReason(e.target.value)}
+               placeholder="We care about the next twenty years" />
+      </Field>
+      {result && <p className="text-sm">{result.note}</p>}
     </Modal>
   );
 }
@@ -637,7 +854,8 @@ function Factors() {
           <table className="table">
             <thead>
               <tr>
-                <th>Factor</th><th className="text-right">kg CO₂e</th><th>Per</th>
+                <th>Factor</th><th className="text-right">kg CO₂e</th>
+                <th className="text-right">at 20 yr</th><th>Per</th>
                 <th className="text-center">Scope</th><th>Source</th><th />
               </tr>
             </thead>
@@ -647,8 +865,18 @@ function Factors() {
                   <td>
                     {f.name}
                     <code className="dim block text-xs">{f.key}{f.region ? ` · ${f.region}` : ''}</code>
+                    {f.gasList && (
+                      <div className="dim text-xs mt-0.5">
+                        {f.gasList.map((g: any) => g.name).join(' · ')}
+                      </div>
+                    )}
                   </td>
                   <td className="text-right tabular-nums">{f.kgPerUnit}</td>
+                  <td className={`text-right tabular-nums ${
+                    f.kgPerUnit20 && f.kgPerUnit20 > f.kgPerUnit * 1.2
+                      ? 'text-amber-600 dark:text-amber-400' : 'dim'}`}>
+                    {f.kgPerUnit20 ?? '—'}
+                  </td>
                   <td className="dim">{f.activityUnit}</td>
                   <td className="text-center tabular-nums">{f.scope}</td>
                   <td className="text-xs dim">

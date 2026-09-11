@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useQuery } from '../lib/hooks';
-import { useApp } from '../App';
+import { useApp, useGo } from '../App';
 import { dateLabel, money, pluralise, quantity } from '../lib/format';
 import { Icon } from '../components/Icon';
 import { DueChip, EmptyState, ErrorNote, Panel, Progress, Spinner, StatTile, useToast } from '../components/ui';
@@ -11,6 +11,7 @@ import { CarbonTile } from './Carbon';
 /** The one screen that answers "what needs me today?" (DASH-001). */
 export function Today() {
   const app = useApp();
+  const go = useGo();
   const { data, error, loading, reload } = useQuery<any>('/dashboard');
   const toast = useToast();
   const [busy, setBusy] = useState<string | null>(null);
@@ -80,6 +81,24 @@ export function Today() {
                   tone={c.dosesMissed ? 'bad' : 'default'} />
         <CarbonTile carbon={data.carbon} />
       </div>
+
+      {/* The two things that want looking at rather than reading about. */}
+      {(data.garden?.growing > 0 || data.compost?.turnsDue > 0) && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {data.garden?.growing > 0 && (
+            <StatTile label="Growing" value={data.garden.growing} icon="sprout"
+                      onClick={() => go('/garden')}
+                      sub={data.garden.readySoon
+                        ? `${data.garden.readySoon} ready this week`
+                        : `${data.garden.harvests} picked this year`} />
+          )}
+          {data.compost?.turnsDue > 0 && (
+            <StatTile label="Compost to turn" value={data.compost.turnsDue} icon="recycle"
+                      tone="warn" onClick={() => go('/compost')}
+                      sub={data.compost.names.join(', ')} />
+          )}
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-3 gap-5 items-start">
         <div className="lg:col-span-2 space-y-5">
