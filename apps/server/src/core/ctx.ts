@@ -6,6 +6,7 @@ import type { AuthUser } from './auth.js';
 
 export interface Household {
   id: string; name: string; timezone: string; currency: string; locale: string; unitSystem: string;
+  settings: Record<string, unknown> | null;
 }
 
 export interface Ctx {
@@ -24,8 +25,14 @@ export async function loadHousehold(db: DB): Promise<Household> {
   const rows = await db.select().from(households).limit(1);
   const h = rows[0];
   cached = h
-    ? { id: h.id, name: h.name, timezone: h.timezone, currency: h.currency, locale: h.locale, unitSystem: h.unitSystem }
-    : { id: 'unset', name: 'Homestead', timezone: 'UTC', currency: 'USD', locale: 'en-US', unitSystem: 'imperial' };
+    ? {
+      id: h.id, name: h.name, timezone: h.timezone, currency: h.currency,
+      locale: h.locale, unitSystem: h.unitSystem, settings: h.settings ?? null,
+    }
+    : {
+      id: 'unset', name: 'Homestead', timezone: 'UTC', currency: 'USD',
+      locale: 'en-US', unitSystem: 'imperial', settings: null,
+    };
   return cached;
 }
 export function invalidateHousehold(): void { cached = null; }
@@ -38,5 +45,8 @@ export async function makeCtx(db: DB, user: AuthUser | null, now = new Date()): 
 export async function householdById(db: DB, id: string): Promise<Household | null> {
   const rows = await db.select().from(households).where(eq(households.id, id)).limit(1);
   const h = rows[0];
-  return h ? { id: h.id, name: h.name, timezone: h.timezone, currency: h.currency, locale: h.locale, unitSystem: h.unitSystem } : null;
+  return h ? {
+    id: h.id, name: h.name, timezone: h.timezone, currency: h.currency,
+    locale: h.locale, unitSystem: h.unitSystem, settings: h.settings ?? null,
+  } : null;
 }

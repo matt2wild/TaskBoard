@@ -7,7 +7,10 @@ import {
   assets, jobRuns, loans, maintenancePlans, recurringBills, schedules, tasks, taskAssignees, warranties,
 } from '../db/schema.js';
 import { materialiseAll } from '../services/tasks.js';
-import { flagMissedDoses, dosesDueToday, materialiseDoses, reconcilePetSupplies } from '../services/pets.js';
+import {
+  flagMissedDoses, dosesDueToday, materialiseDoses, recordDailyPetFood, reconcilePetSupplies,
+} from '../services/pets.js';
+import { footprint } from '../services/carbon.js';
 import { expiringSoon, lowStockList } from '../services/stock.js';
 import { flushDeliveries, notify } from '../services/notify.js';
 import { monthOf, monthSummary } from '../services/budget.js';
@@ -146,6 +149,8 @@ export async function runDailyPass(ctx: Ctx): Promise<Record<string, number>> {
   }
 
   count('petSuppliesAdded', (await reconcilePetSupplies(ctx)).length);
+  // A day of feeding, booked once, so a pet's footprint keeps pace with its cost.
+  count('petFoodActivities', await recordDailyPetFood(ctx, addDays(ctx.today, -1)));
 
   // Loans past their return date.
   const openLoans = await ctx.db.select().from(loans)
@@ -179,6 +184,29 @@ export async function runDailyPass(ctx: Ctx): Promise<Record<string, number>> {
       dedupeKey: `budget:${c.categoryId}:${budget.period}:${threshold}`,
     });
     count('budgetAlerts', res.created);
+  }
+
+  // Carbon budget, on the same footing and the same machinery as money.
+  const { carbonTargets } = await import('../db/schema.js');
+  const year = ctx.today.slice(0, 4);
+  const targetRows = await ctx.db.select().from(carbonTargets)
+    .where(and(eq(carbonTargets.period, year), isNull(carbonTargets.deletedAt))).limit(1);
+  const target = targetRows[0];
+  if (target && target.gCo2e > 0) {
+    const actual = await footprint(ctx, `${year}-01-01`, `${year}-12-31`);
+    const pct = Math.round((actual.total / target.gCo2e) * 100);
+    const threshold = pct >= 100 ? 100 : pct >= 80 ? 80 : null;
+    if (threshold) {
+      const res = await notify(ctx, {
+        eventType: 'carbon.threshold',
+        title: threshold === 100
+          ? `Over the ${year} carbon target`
+          : `${pct}% of the ${year} carbon target used`,
+        body: `${Math.round(actual.total / 1000)} kg of a ${Math.round(target.gCo2e / 1000)} kg target.`,
+        dedupeKey: `carbon:${year}:${threshold}`,
+      });
+      count('carbonAlerts', res.created);
+    }
   }
 
   const flushed = await flushDeliveries(ctx);

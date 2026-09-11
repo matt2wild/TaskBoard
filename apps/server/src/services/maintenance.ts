@@ -15,6 +15,8 @@ export interface CompleteMaintenanceExtra {
   cost?: { amount: number; categoryId?: string; payeeName?: string; memo?: string; accountId?: string };
   consumables?: Array<{ productId: string; quantity: number; unit?: string }>;
   readings?: Array<{ metric: string; value: number; unit?: string }>;
+  /** Refrigerant added to (positive) or recovered from (negative) the system. */
+  refrigerant?: { type: string; kg: number };
   performerContactId?: string | null;
   notesMd?: string;
   kind?: 'planned' | 'adhoc' | 'repair' | 'inspection';
@@ -74,12 +76,14 @@ export async function recordMaintenance(
 
   // Attribute the cost to the record too, so maintenance reporting can roll up.
   if (transactionId) {
-    const { splitAttributions, transactionSplits } = await import('../db/schema.js');
+    const { attributions, transactionSplits } = await import('../db/schema.js');
     const splits = await ctx.db.select().from(transactionSplits)
       .where(eq(transactionSplits.transactionId, transactionId));
     if (splits[0]) {
-      await ctx.db.insert(splitAttributions)
-        .values({ splitId: splits[0].id, entityType: 'maintenance_record', entityId: record!.id });
+      await ctx.db.insert(attributions).values({
+        sourceKind: 'split', sourceId: splits[0].id,
+        entityType: 'maintenance_record', entityId: record!.id,
+      }).onConflictDoNothing();
     }
   }
 
@@ -106,6 +110,17 @@ export async function recordMaintenance(
         shoppingAdded.push(p.name);
       }
     }
+  }
+
+  if (extra.refrigerant && args.targetType === 'asset' && extra.refrigerant.kg > 0) {
+    const { recordRefrigerant } = await import('./carbon.js');
+    await recordRefrigerant(ctx, {
+      assetId: args.targetId,
+      refrigerant: extra.refrigerant.type,
+      kg: extra.refrigerant.kg,
+      occurredOn: performedAt,
+      recordId: record!.id,
+    });
   }
 
   if (extra.readings?.length && args.targetType === 'asset') {

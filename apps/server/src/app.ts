@@ -17,6 +17,7 @@ import { taskRoutes } from './modules/tasks.routes.js';
 import { maintenanceRoutes } from './modules/maintenance.routes.js';
 import { projectRoutes } from './modules/projects.routes.js';
 import { budgetRoutes } from './modules/budget.routes.js';
+import { carbonRoutes } from './modules/carbon.routes.js';
 import { foodRoutes } from './modules/food.routes.js';
 import { storageRoutes } from './modules/storage.routes.js';
 import { toolRoutes } from './modules/tools.routes.js';
@@ -91,6 +92,7 @@ export async function buildApp(db: DB): Promise<FastifyInstance> {
   maintenanceRoutes(app);
   projectRoutes(app);
   budgetRoutes(app);
+  carbonRoutes(app);
   foodRoutes(app);
   storageRoutes(app);
   toolRoutes(app);

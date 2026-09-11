@@ -248,9 +248,17 @@ export async function addToShoppingList(
       return dupe[0];
     }
   }
+  // A catalogued product is counted in its own unit: two pounds of beef, not
+  // "two of beef". Put-away and its footprint both depend on getting this right.
+  let unit = args.unit;
+  if (!unit && args.productId) {
+    const p = (await ctx.db.select({ defaultUnit: products.defaultUnit })
+      .from(products).where(eq(products.id, args.productId)).limit(1))[0];
+    unit = p?.defaultUnit;
+  }
   const [row] = await ctx.db.insert(shoppingLines).values({
     listId, productId: args.productId ?? null, text: args.text,
-    quantity: args.quantity ?? 1, unit: args.unit ?? 'ea',
+    quantity: args.quantity ?? 1, unit: unit ?? 'ea',
     sourceType: args.sourceType ?? 'manual', sourceId: args.sourceId ?? null,
     note: args.note ?? null, storeContactId: args.storeContactId ?? null,
     createdBy: ctx.user?.id ?? null,

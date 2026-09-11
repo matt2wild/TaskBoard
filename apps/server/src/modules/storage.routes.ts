@@ -10,6 +10,7 @@ import { crudRoutes } from '../core/crud.js';
 import { requireWrite } from '../core/auth.js';
 import { badRequest, notFound } from '../core/errors.js';
 import { attachCost } from '../services/budget.js';
+import { tryRecordActivity, WASTE_FACTOR_BY_METHOD } from '../services/carbon.js';
 import { locationPaths } from './core.routes.js';
 
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -158,6 +159,7 @@ export function storageRoutes(app: FastifyInstance): void {
     const body = z.object({
       method: z.enum(['sold', 'donated', 'recycled', 'trashed']),
       proceeds: z.number().int().nullable().optional(),
+      massKg: z.number().positive().optional(),
       note: z.string().optional(),
     }).parse(req.body);
     const item = (await req.ctx.db.select().from(storageItems).where(eq(storageItems.id, id)).limit(1))[0];
@@ -174,7 +176,20 @@ export function storageRoutes(app: FastifyInstance): void {
       });
       transactionId = transaction.id;
     }
-    return { id, method: body.method, transactionId };
+
+    // Landfill, recycling and reuse are not the same thing, so the route the
+    // item takes out of the house decides the factor.
+    let carbon = null;
+    if (body.massKg) {
+      carbon = await tryRecordActivity(req.ctx, {
+        type: 'waste', amount: body.massKg, unit: 'kg',
+        factorKey: WASTE_FACTOR_BY_METHOD[body.method] ?? 'waste.landfill',
+        sourceType: 'storage_item', sourceId: id,
+        note: `${item.name} (${body.method})`,
+        attributions: [{ entityType: 'storage_item', entityId: id }],
+      });
+    }
+    return { id, method: body.method, transactionId, gCo2e: carbon?.gCo2e ?? null };
   });
 
   /* ── loans (STOR-008, TOOL-003) ── */

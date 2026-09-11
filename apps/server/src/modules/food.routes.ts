@@ -15,6 +15,7 @@ import {
   expiringSoon, lowStockList, onHand, onHandMany, reconcileLowStock,
 } from '../services/stock.js';
 import { attachCost, distributeReceipt } from '../services/budget.js';
+import { recordProductEmissions } from '../services/carbon.js';
 import { locationPaths } from './core.routes.js';
 
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -26,10 +27,12 @@ export function foodRoutes(app: FastifyInstance): void {
       name: z.string().trim().min(1), slug: z.string().trim().min(1),
       parentId: z.string().nullable().optional(), isFood: z.boolean().optional(),
       sort: z.number().int().optional(),
+      emissionFactorKey: z.string().nullable().optional(),
     }),
     update: z.object({
       name: z.string().trim().min(1).optional(), parentId: z.string().nullable().optional(),
       isFood: z.boolean().optional(), sort: z.number().int().optional(),
+      emissionFactorKey: z.string().nullable().optional(),
     }),
     searchColumns: ['name'], filterColumns: ['parentId', 'isFood', 'slug'],
   });
@@ -51,6 +54,9 @@ export function foodRoutes(app: FastifyInstance): void {
     nutrition: z.record(z.number()).nullable().optional(),
     spec: z.record(z.unknown()).nullable().optional(),
     notes: z.string().nullable().optional(),
+    // Carbon travels with the catalogue, not beside it (INT-008).
+    emissionFactorKey: z.string().nullable().optional(),
+    unitMassKg: z.number().positive().nullable().optional(),
   };
 
   const productCrud = crudRoutes(app, '/api/v1/products', {
@@ -227,8 +233,19 @@ export function foodRoutes(app: FastifyInstance): void {
       reason: body.action === 'waste' ? 'waste' : 'consume',
       wasteReason: body.wasteReason, locationId: lot.locationId,
     });
+    let wastedGCo2e: number | null = null;
+    if (body.action === 'waste') {
+      // Thrown-out food carries its whole footprint for nothing, which is the
+      // number most likely to change behaviour.
+      const carbon = await recordProductEmissions(req.ctx, {
+        productId: lot.productId, quantity: qty, unit: lot.unit, type: 'waste',
+        sourceType: 'waste_log', sourceId: id,
+        note: `Wasted: ${body.wasteReason ?? 'expired'}`,
+      });
+      wastedGCo2e = carbon?.gCo2e ?? null;
+    }
     const fresh = (await req.ctx.db.select().from(stockItems).where(eq(stockItems.id, id)).limit(1))[0];
-    return { stockItem: fresh, ...result };
+    return { stockItem: fresh, ...result, wastedGCo2e };
   });
 
   app.post('/api/v1/stock/consume', async (req) => {
@@ -423,6 +440,7 @@ export function foodRoutes(app: FastifyInstance): void {
         : body.items.map(() => 0);
 
     const created = [];
+    let embodied = 0;
     for (const [idx, item] of body.items.entries()) {
       const line = (await req.ctx.db.select().from(shoppingLines).where(eq(shoppingLines.id, item.lineId)).limit(1))[0];
       if (!line) continue;
@@ -453,10 +471,18 @@ export function foodRoutes(app: FastifyInstance): void {
         deletedAt: body.clearChecked ? new Date().toISOString() : null,
       }).where(eq(shoppingLines.id, item.lineId));
       await reconcileLowStock(req.ctx, productId);
+      // One trip, both measures: the receipt and the footprint (INT-008).
+      const carbon = await recordProductEmissions(req.ctx, {
+        productId, quantity: item.quantity, unit: stock.unit,
+        occurredOn: body.transaction?.date ?? req.ctx.today,
+        transactionId, sourceType: 'stock_item', sourceId: stock.id,
+        note: `Bought: ${line.text}`,
+      });
+      if (carbon) embodied += carbon.gCo2e;
       created.push(stock);
     }
     reply.status(201);
-    return { listId, stockItems: created, transactionId };
+    return { listId, stockItems: created, transactionId, embodiedGCo2e: embodied };
   });
 
   /* ── waste (FOOD-013) ── */
@@ -478,9 +504,20 @@ export function foodRoutes(app: FastifyInstance): void {
       p.count += 1; p.cost += r.w.estCost ?? 0; p.quantity += r.w.quantity;
       byProduct.set(r.product, p);
     }
+    const { emissions, activities: activityTable } = await import('../db/schema.js');
+    const wasteCarbon = await req.ctx.db.select({
+      total: sql<number>`coalesce(sum(${emissions.gCo2e}), 0)`,
+    }).from(emissions)
+      .innerJoin(activityTable, eq(activityTable.id, emissions.activityId))
+      .where(and(
+        eq(activityTable.sourceType, 'waste_log'),
+        gte(activityTable.occurredOn, from),
+        isNull(activityTable.deletedAt),
+      ));
     return {
       items: rows.map((r) => ({ ...r.w, product: r.product })),
       totalCost: rows.reduce((a, b) => a + (b.w.estCost ?? 0), 0),
+      totalGCo2e: Number(wasteCarbon[0]?.total ?? 0),
       byMonth: [...byMonth].sort().map(([month, v]) => ({ month, ...v })),
       byProduct: [...byProduct].map(([name, v]) => ({ name, ...v })).sort((a, b) => b.cost - a.cost).slice(0, 20),
       currency: req.ctx.household.currency,

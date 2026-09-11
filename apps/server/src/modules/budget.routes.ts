@@ -7,13 +7,14 @@ import {
   ACCOUNT_TYPES, ATTRIBUTABLE, ROLLOVER_RULES, TRANSACTION_TYPES, addMonths, monthlySetAside, parseMoney,
 } from '@homestead/shared';
 import {
-  accounts, budgetAllocations, categories, goals, payees, projects, recurringBills, splitAttributions,
+  accounts, attributions, budgetAllocations, categories, goals, payees, projects, recurringBills,
   transactionSplits, transactions, assets, pets,
 } from '../db/schema.js';
 import { crudRoutes } from '../core/crud.js';
 import { requireWrite } from '../core/auth.js';
 import { badRequest, notFound } from '../core/errors.js';
 import { attachCost, monthOf, monthRange, monthSummary, resolvePayee } from '../services/budget.js';
+import { attachCostToMeteredPeriod, tryRecordActivity } from '../services/carbon.js';
 import { upsertSchedule, onTaskComplete } from '../services/tasks.js';
 import { resolveLabels } from '../core/registry.js';
 
@@ -138,7 +139,7 @@ export function budgetRoutes(app: FastifyInstance): void {
     if (q.entityType && q.entityId) {
       where.push(sql`exists (
         select 1 from transaction_split ts
-        join split_attribution sa on sa.split_id = ts.id
+        join attribution sa on sa.source_id = ts.id and sa.source_kind = 'split'
         where ts.transaction_id = ${transactions.id}
           and sa.entity_type = ${q.entityType} and sa.entity_id = ${q.entityId})`);
     }
@@ -225,8 +226,10 @@ export function budgetRoutes(app: FastifyInstance): void {
           .values({ transactionId: id, amount: s.amount, categoryId: s.categoryId ?? null, memo: s.memo ?? null, sort: i })
           .returning();
         if (s.attributions?.length) {
-          await req.ctx.db.insert(splitAttributions)
-            .values(s.attributions.map((a) => ({ splitId: row!.id, entityType: a.entityType, entityId: a.entityId })));
+          await req.ctx.db.insert(attributions).values(s.attributions.map((a) => ({
+            sourceKind: 'split', sourceId: row!.id,
+            entityType: a.entityType, entityId: a.entityId,
+          }))).onConflictDoNothing();
         }
       }
     }
@@ -354,17 +357,18 @@ export function budgetRoutes(app: FastifyInstance): void {
     const where = [isNull(transactions.deletedAt), eq(transactions.type, 'expense')];
     if (q.from) where.push(gte(transactions.date, q.from));
     if (q.to) where.push(lte(transactions.date, q.to));
-    if (q.entityType) where.push(eq(splitAttributions.entityType, q.entityType));
+    if (q.entityType) where.push(eq(attributions.entityType, q.entityType));
+    where.push(eq(attributions.sourceKind, 'split'));
     const rows = await req.ctx.db.select({
-      entityType: splitAttributions.entityType,
-      entityId: splitAttributions.entityId,
+      entityType: attributions.entityType,
+      entityId: attributions.entityId,
       total: sql<number>`sum(${transactionSplits.amount})`,
       count: sql<number>`count(distinct ${transactions.id})`,
-    }).from(splitAttributions)
-      .innerJoin(transactionSplits, eq(transactionSplits.id, splitAttributions.splitId))
+    }).from(attributions)
+      .innerJoin(transactionSplits, eq(transactionSplits.id, attributions.sourceId))
       .innerJoin(transactions, eq(transactions.id, transactionSplits.transactionId))
       .where(and(...where))
-      .groupBy(splitAttributions.entityType, splitAttributions.entityId);
+      .groupBy(attributions.entityType, attributions.entityId);
     const labels = await resolveLabels(req.ctx.db, rows.map((r) => ({ type: r.entityType, id: r.entityId })));
     const byType = new Map<string, number>();
     for (const r of rows) byType.set(r.entityType, (byType.get(r.entityType) ?? 0) + Number(r.total));
@@ -392,6 +396,9 @@ export function budgetRoutes(app: FastifyInstance): void {
       variable: z.boolean().optional(),
       leadDays: z.number().int().min(0).max(60).default(5),
       everyMonths: z.number().int().min(1).max(12).default(1),
+      meteredUnit: z.string().nullable().optional(),
+      emissionFactorKey: z.string().nullable().optional(),
+      meterAssetId: z.string().nullable().optional(),
     }),
     update: z.object({
       name: z.string().trim().min(1).optional(),
@@ -402,6 +409,9 @@ export function budgetRoutes(app: FastifyInstance): void {
       active: z.boolean().optional(),
       categoryId: z.string().nullable().optional(),
       accountId: z.string().nullable().optional(),
+      meteredUnit: z.string().nullable().optional(),
+      emissionFactorKey: z.string().nullable().optional(),
+      meterAssetId: z.string().nullable().optional(),
     }),
     searchColumns: ['name'], filterColumns: ['active', 'categoryId', 'payeeId'],
     hooks: {
@@ -414,6 +424,7 @@ export function budgetRoutes(app: FastifyInstance): void {
           ...r,
           nextDue: r.scheduleId ? byId.get(r.scheduleId)?.nextDue ?? null : null,
           monthlySetAside: r.amount ? monthlySetAside(r.amount, r.everyMonths) : null,
+          metered: !!r.meteredUnit,
         }));
       },
     },
@@ -448,23 +459,59 @@ export function budgetRoutes(app: FastifyInstance): void {
       date: dateStr.optional(),
       taskId: z.string().optional(),
       accountId: z.string().optional(),
+      /** Metered consumption for this period, when the bill carries a meter. */
+      quantity: z.number().positive().optional(),
     }).parse(req.body ?? {});
     const bill = (await req.ctx.db.select().from(recurringBills).where(eq(recurringBills.id, id)).limit(1))[0];
     if (!bill) throw notFound('Bill');
     const amount = body.amount ?? bill.amount;
     if (!amount) throw badRequest('This bill varies; give the amount');
+    const date = body.date ?? req.ctx.today;
     const { transaction } = await attachCost(req.ctx, {
-      amount, date: body.date ?? req.ctx.today,
+      amount, date,
       categoryId: bill.categoryId, payeeId: bill.payeeId,
       accountId: body.accountId ?? bill.accountId, memo: bill.name,
       recurringBillId: bill.id, cleared: true,
     });
+
+    // A utility bill is money and energy. Entered once, counted twice (INT-008).
+    // If a meter already recorded this period, the bill joins that activity
+    // rather than creating a second record of the same kilowatt hours.
+    let activity = null;
+    let attachedToMeter = null;
+    if (bill.meterAssetId) {
+      attachedToMeter = await attachCostToMeteredPeriod(req.ctx, {
+        meterAssetId: bill.meterAssetId,
+        type: bill.emissionFactorKey?.split('.')[0] ?? 'electricity',
+        periodEnd: date,
+        transactionId: transaction.id,
+      });
+    }
+    if (!attachedToMeter && body.quantity && bill.meteredUnit) {
+      activity = await tryRecordActivity(req.ctx, {
+        type: bill.emissionFactorKey?.split('.')[0] ?? 'electricity',
+        amount: body.quantity,
+        unit: bill.meteredUnit,
+        occurredOn: date,
+        factorKey: bill.emissionFactorKey,
+        transactionId: transaction.id,
+        sourceType: 'recurring_bill',
+        sourceId: bill.id,
+        note: `${bill.name} for the period ending ${date}`,
+        attributions: bill.meterAssetId ? [{ entityType: 'asset', entityId: bill.meterAssetId }] : [],
+      });
+    }
     if (body.taskId) {
       const { completeTask } = await import('../services/tasks.js');
-      await completeTask(req.ctx, body.taskId, { completedAt: body.date ?? req.ctx.today });
+      await completeTask(req.ctx, body.taskId, { completedAt: date });
     }
     reply.status(201);
-    return { billId: id, transactionId: transaction.id, amount };
+    return {
+      billId: id, transactionId: transaction.id, amount,
+      activityId: activity?.activity.id ?? attachedToMeter?.id ?? null,
+      gCo2e: activity?.gCo2e ?? null,
+      attachedToMeterReading: !!attachedToMeter,
+    };
   });
 
   app.get('/api/v1/bills/upcoming', async (req) => {
@@ -683,7 +730,9 @@ async function hydrate(ctx: any, rows: Array<typeof transactions.$inferSelect>):
     .where(inArray(transactionSplits.transactionId, ids)).orderBy(asc(transactionSplits.sort));
   const splitIds = splits.map((s: any) => s.id);
   const attrs = splitIds.length
-    ? await ctx.db.select().from(splitAttributions).where(inArray(splitAttributions.splitId, splitIds))
+    ? await ctx.db.select().from(attributions).where(and(
+      eq(attributions.sourceKind, 'split'), inArray(attributions.sourceId, splitIds),
+    ))
     : [];
   const labels = await resolveLabels(ctx.db, attrs.map((a: any) => ({ type: a.entityType, id: a.entityId })));
   const payeeIds = [...new Set(rows.map((r) => r.payeeId).filter(Boolean))] as string[];
@@ -703,7 +752,7 @@ async function hydrate(ctx: any, rows: Array<typeof transactions.$inferSelect>):
       splits: mine.map((s: any) => ({
         ...s,
         categoryName: s.categoryId ? catName.get(s.categoryId) ?? null : null,
-        attributions: attrs.filter((a: any) => a.splitId === s.id).map((a: any) => ({
+        attributions: attrs.filter((a: any) => a.sourceId === s.id).map((a: any) => ({
           entityType: a.entityType, entityId: a.entityId,
           label: labels.get(`${a.entityType}:${a.entityId}`) ?? a.entityId,
         })),

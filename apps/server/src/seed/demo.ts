@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { addDays, addMonths } from '@homestead/shared';
 import type { DB } from '../db/index.js';
 import { makeCtx, invalidateHousehold } from '../core/ctx.js';
@@ -9,7 +9,9 @@ import { seedDefaults } from './defaults.js';
 import { upsertSchedule, materialiseAll } from '../services/tasks.js';
 import { addStock } from '../services/stock.js';
 import { attachCost } from '../services/budget.js';
-import { materialiseDoses } from '../services/pets.js';
+import { materialiseDoses, recordDailyPetFood } from '../services/pets.js';
+import { recordActivity } from '../services/carbon.js';
+import { estimateIntervention } from '../services/interventions.js';
 import { registerMaintenanceHooks } from '../services/maintenance.js';
 import { registerPetHooks } from '../services/pets.js';
 
@@ -58,7 +60,7 @@ export async function seedDemo(db: DB, opts: { password?: string } = {}): Promis
     name: 'Home', type: 'house', isPrimary: true,
     address: { line1: '14 Alder Lane', city: 'Northfield', region: 'VT', postcode: '05663' },
     purchaseDate: '2019-06-14', purchasePrice: 31500000, areaSqft: 1840, yearBuilt: 1978,
-    notesMd: 'Two-storey colonial. Well and septic. Oil-fired forced air.',
+    notesMd: 'Two-storey colonial. Well and septic. Oil-fired forced air, 275 gallon tank in the basement.',
     createdBy: admin!.id,
   }).returning();
 
@@ -130,8 +132,8 @@ export async function seedDemo(db: DB, opts: { password?: string } = {}): Promis
     return row!;
   };
 
-  const furnace = await asset('Furnace', 'furnace', utility.id, {
-    make: 'Trane', model: 'S9V2-VS', serial: 'TR-884213',
+  const furnace = await asset('Oil furnace', 'furnace', utility.id, {
+    make: 'Weil-McLain', model: 'WTGO-3', serial: 'WM-884213',
     installedDate: '2019-09-02', purchasePrice: 480000, expectedLifespanYears: 20,
     replacementCostEstimate: 620000, warrantyExpiry: addDays(today, 41),
     notesMd: 'Filter size 16x25x1. Return is in the hallway ceiling.',
@@ -190,11 +192,12 @@ export async function seedDemo(db: DB, opts: { password?: string } = {}): Promis
   const wetFood = await product('Wet cat food, chicken pâté', {
     isFood: true, isPetSupply: true, categoryId: await prodCat('cat-food-wet'),
     defaultUnit: 'can', minQuantity: 12, brand: 'Fancy Feast',
-    shelfLife: { ambient: 900 },
+    shelfLife: { ambient: 900 }, unitMassKg: 0.085,
   });
   const dryFood = await product('Dry cat food, indoor formula', {
     isFood: true, isPetSupply: true, categoryId: await prodCat('cat-food-dry'),
     defaultUnit: 'bag', minQuantity: 1, packageSize: 7, packageUnit: 'lb',
+    unitMassKg: 3.18,
   });
   const methimazole = await product('Methimazole 2.5mg', {
     isFood: false, isPetSupply: true, categoryId: await prodCat('pet-medications'), defaultUnit: 'dose',
@@ -202,19 +205,29 @@ export async function seedDemo(db: DB, opts: { password?: string } = {}): Promis
   const oatMilk = await product('Oat milk', {
     categoryId: await prodCat('dairy-eggs'), defaultUnit: 'bottle',
     minQuantity: 2, shelfLife: { refrigerated: 10, ambient: 180 }, useWithinDaysOpened: 7,
+    unitMassKg: 0.95, emissionFactorKey: 'food.beverages',
   });
   const blackBeans = await product('Black beans', {
     categoryId: await prodCat('canned-goods'), defaultUnit: 'can',
-    minQuantity: 4, shelfLife: { ambient: 900 },
+    minQuantity: 4, shelfLife: { ambient: 900 }, unitMassKg: 0.42,
   });
   const eggs = await product('Eggs', {
     categoryId: await prodCat('dairy-eggs'), defaultUnit: 'ea',
     minQuantity: 6, shelfLife: { refrigerated: 28 },
+    unitMassKg: 0.055, emissionFactorKey: 'food.eggs',
   });
   const chicken = await product('Chicken thighs', {
-    categoryId: await prodCat('meat-seafood'), defaultUnit: 'lb', shelfLife: { refrigerated: 3, frozen: 270 },
+    categoryId: await prodCat('meat-seafood'), defaultUnit: 'lb',
+    shelfLife: { refrigerated: 3, frozen: 270 }, emissionFactorKey: 'food.poultry',
   });
-  const pasta = await product('Pasta, penne', { categoryId: await prodCat('pasta'), defaultUnit: 'box', minQuantity: 2, shelfLife: { ambient: 730 } });
+  const beef = await product('Ground beef', {
+    categoryId: await prodCat('meat-seafood'), defaultUnit: 'lb',
+    shelfLife: { refrigerated: 3, frozen: 180 }, emissionFactorKey: 'food.beef',
+  });
+  const pasta = await product('Pasta, penne', {
+    categoryId: await prodCat('pasta'), defaultUnit: 'box', minQuantity: 2,
+    shelfLife: { ambient: 730 }, unitMassKg: 0.454,
+  });
   const sawBlade = await product('10" 60T saw blade', { isFood: false, categoryId: await prodCat('blades-bits'), defaultUnit: 'ea' });
 
   await db.insert(s.productBarcodes).values([
@@ -234,6 +247,7 @@ export async function seedDemo(db: DB, opts: { password?: string } = {}): Promis
   await addStock(ctx, { productId: eggs.id, quantity: 8, locationId: fridge.id, expiryDate: addDays(today, 6) });
   await addStock(ctx, { productId: chicken.id, quantity: 2.4, unit: 'lb', locationId: fridge.id, expiryDate: addDays(today, 2) });
   await addStock(ctx, { productId: chicken.id, quantity: 6, unit: 'lb', locationId: freezer.id, expiryDate: addDays(today, 180) });
+  await addStock(ctx, { productId: beef.id, quantity: 2, unit: 'lb', locationId: freezer.id, expiryDate: addDays(today, 150) });
   await addStock(ctx, { productId: blackBeans.id, quantity: 3, locationId: pantry.id, expiryDate: addDays(today, 400) });
   await addStock(ctx, { productId: pasta.id, quantity: 4, locationId: pantry.id, expiryDate: addDays(today, 500) });
 
@@ -471,6 +485,156 @@ export async function seedDemo(db: DB, opts: { password?: string } = {}): Promis
     accountId: checking!.id, createdBy: admin!.id, updatedBy: admin!.id,
   });
 
+
+  /* ── energy, metered and delivered ── */
+
+  const electricMeter = await asset('Electricity meter', 'service-panel', utility.id, {
+    make: 'Itron', model: 'CENTRON', serial: 'GMP-4471288',
+    installedDate: '2019-06-14',
+  });
+  await db.insert(s.meters).values({
+    assetId: electricMeter.id, kind: 'electricity', unit: 'kwh',
+    emissionFactorKey: 'electricity.grid', multiplier: 1, rolloverAt: 100000,
+    serial: 'GMP-4471288', installedOn: '2019-06-14', createdBy: admin!.id,
+  });
+
+  // Fourteen months of readings. The shape is a real one: electric heat in the
+  // shoulder months, air conditioning in July and August.
+  const monthlyKwh = [980, 910, 820, 690, 620, 700, 880, 910, 690, 640, 730, 900, 1010, 940];
+  let meterValue = 42_180;
+  for (let i = monthlyKwh.length; i >= 1; i--) {
+    const takenAt = addDays(today, -(i - 1) * 30);
+    await db.insert(s.readings).values({
+      assetId: electricMeter.id, metric: 'kwh', value: Number(meterValue.toFixed(1)),
+      unit: 'kwh', takenAt, createdBy: admin!.id, updatedBy: admin!.id,
+    });
+    meterValue += monthlyKwh[monthlyKwh.length - i]!;
+  }
+  // Difference the readings into consumption, exactly as the app would.
+  const readingRows = await db.select().from(s.readings)
+    .where(eq(s.readings.assetId, electricMeter.id)).orderBy(s.readings.takenAt);
+  const { activityFromReading } = await import('../services/carbon.js');
+  for (const r of readingRows) {
+    await activityFromReading(ctx, r.id).catch(() => undefined);
+  }
+
+  // Oil deliveries: one transaction and one activity each, entered once.
+  const deliveries: Array<[number, number, number]> = [
+    // [days ago, gallons, price in cents]
+    [330, 212, 68_900], [285, 198, 64_400], [250, 224, 73_100],
+    [210, 176, 57_200], [40, 168, 55_400],
+  ];
+  for (const [daysAgo, gallons, cents] of deliveries) {
+    const date = addDays(today, -daysAgo);
+    const { transaction } = await attachCost(ctx, {
+      amount: cents, date, categoryId: await catByName('Gas/Heating'),
+      payeeName: 'Valley Fuel', accountId: checking!.id,
+      memo: `Heating oil, ${gallons} gallons`,
+      attributions: [{ entityType: 'asset', entityId: furnace.id }],
+    });
+    await recordActivity(ctx, {
+      type: 'heating_oil', amount: gallons, unit: 'gal', occurredOn: date,
+      propertyId: property!.id, transactionId: transaction.id,
+      note: `Delivery, ${gallons} gallons`,
+      attributions: [{ entityType: 'asset', entityId: furnace.id }],
+    });
+  }
+
+  // The electricity bill carries its meter, so paying it records both measures.
+  await db.update(s.recurringBills).set({
+    meteredUnit: 'kwh', emissionFactorKey: 'electricity.grid', meterAssetId: electricMeter.id,
+  }).where(eq(s.recurringBills.id, electricBill!.id));
+
+  // Twelve paid bills, each attaching its cost to the period the meter already
+  // recorded. Two records of the same kilowatt hours, counted once.
+  const { attachCostToMeteredPeriod } = await import('../services/carbon.js');
+  for (let i = 12; i >= 1; i--) {
+    const billDate = addDays(today, -(i - 1) * 30 - 5);
+    const kwh = monthlyKwh[monthlyKwh.length - i] ?? 800;
+    const cents = Math.round(kwh * 21.4); // about 21 cents a kilowatt hour
+    const { transaction } = await attachCost(ctx, {
+      amount: cents, date: billDate, categoryId: electricityCat,
+      payeeName: 'Green Mountain Power', accountId: checking!.id,
+      memo: 'Electricity', cleared: true, recurringBillId: electricBill!.id,
+    });
+    await attachCostToMeteredPeriod(ctx, {
+      meterAssetId: electricMeter.id, type: 'electricity',
+      periodEnd: billDate, transactionId: transaction.id,
+    });
+  }
+
+  // Water, read quarterly.
+  for (const [daysAgo, m3] of [[270, 41], [180, 38], [90, 44], [10, 40]] as Array<[number, number]>) {
+    await recordActivity(ctx, {
+      type: 'water', amount: m3, unit: 'm3', occurredOn: addDays(today, -daysAgo),
+      propertyId: property!.id, note: 'Quarterly water reading',
+    });
+  }
+
+  // A refrigerant top-up, small in mass and large in effect.
+  await recordActivity(ctx, {
+    type: 'refrigerant', amount: 0.4, unit: 'kg', occurredOn: addDays(today, -120),
+    factorKey: 'refrigerant.r410a', propertyId: property!.id,
+    note: 'R-410A added to the mini-split during service',
+    attributions: [{ entityType: 'asset', entityId: fridgeAsset.id }],
+  });
+
+  // A year of groceries, in the aggregate, so the food slice is not empty.
+  for (const [key, kg, daysAgo] of [
+    ['food.beef', 14, 200], ['food.poultry', 38, 190], ['food.milk', 96, 180],
+    ['food.vegetables', 130, 170], ['food.grains', 72, 160], ['food.cheese', 11, 150],
+    ['food.fruit', 88, 140], ['food.eggs', 24, 130], ['food.coffee', 6, 120],
+  ] as Array<[string, number, number]>) {
+    await recordActivity(ctx, {
+      type: 'food', amount: kg, unit: 'kg', occurredOn: addDays(today, -daysAgo),
+      factorKey: key, propertyId: property!.id, note: 'Groceries, aggregated',
+    });
+  }
+
+  // Waste, weighed at the transfer station.
+  for (const [daysAgo, kg, route] of [
+    [60, 78, 'waste.landfill'], [60, 46, 'waste.recycled'], [150, 82, 'waste.landfill'],
+  ] as Array<[number, number, string]>) {
+    await recordActivity(ctx, {
+      type: 'waste', amount: kg, unit: 'kg', occurredOn: addDays(today, -daysAgo),
+      factorKey: route, propertyId: property!.id, note: 'Transfer station run',
+    });
+  }
+
+  // A target to measure against.
+  await db.insert(s.carbonTargets).values({
+    period: today.slice(0, 4), gCo2e: 12_000_000,
+    note: 'Twelve tonnes this year, on the way to halving by 2032.',
+    createdBy: admin!.id, updatedBy: admin!.id,
+  });
+
+  // Two candidates, costed against what this house actually burns.
+  for (const key of ['heat_pump', 'attic_insulation']) {
+    const template = (await db.select().from(s.interventionTemplates)
+      .where(eq(s.interventionTemplates.key, key)).limit(1))[0];
+    if (!template) continue;
+    const estimate = await estimateIntervention(ctx, {
+      model: template.savingModel ?? { kind: 'reduce' },
+      capitalCost: template.typicalCost ?? 0,
+      embodiedGCo2e: template.embodiedGCo2e ?? 0,
+      lifetimeYears: template.lifetimeYears,
+    });
+    await db.insert(s.interventions).values({
+      templateKey: template.key, name: template.name, category: template.category,
+      descriptionMd: template.descriptionMd, propertyId: property!.id,
+      targetAssetId: key === 'heat_pump' ? furnace.id : null,
+      capitalCost: template.typicalCost, embodiedGCo2e: template.embodiedGCo2e ?? 0,
+      annualSavingKwh: estimate.annualSavingKwh,
+      annualSavingCost: estimate.annualSavingCost,
+      annualSavingGCo2e: estimate.annualSavingGCo2e,
+      basis: estimate.basis, basisNote: estimate.basisNote,
+      lifetimeYears: template.lifetimeYears,
+      createdBy: admin!.id, updatedBy: admin!.id,
+    });
+  }
+
+  await recordDailyPetFood(ctx, addDays(today, -1));
+
   /* ── the bathroom remodel, mid-flight ── */
 
   const [project] = await db.insert(s.projects).values({
@@ -525,23 +689,44 @@ export async function seedDemo(db: DB, opts: { password?: string } = {}): Promis
     });
   }
 
-  const materials: Array<[string, number, string, number, string]> = [
-    ['Floor tile, 12x24 porcelain', 62, 'ea', 480, 'received'],
-    ['Wall tile, 3x6 subway', 140, 'ea', 190, 'received'],
-    ['Cement board', 8, 'ea', 1450, 'received'],
-    ['Waterproofing membrane', 1, 'ea', 12800, 'received'],
-    ['Thinset mortar', 4, 'bag', 2400, 'ordered'],
-    ['Grout, charcoal', 2, 'bag', 2800, 'needed'],
-    ['Vanity, 36" oak', 1, 'ea', 84000, 'ordered'],
-    ['Toilet, comfort height', 1, 'ea', 32900, 'needed'],
-    ['Shower valve and trim', 1, 'ea', 41500, 'received'],
-    ['Exhaust fan, 110 CFM', 1, 'ea', 13900, 'received'],
+  // Each line carries what it is made of, so the project has a footprint as
+  // well as a budget (GHG-012).
+  const materials: Array<[string, number, string, number, string, string | null, number | null]> = [
+    ['Floor tile, 12x24 porcelain', 62, 'ea', 480, 'received', 'material.tile', 3.4],
+    ['Wall tile, 3x6 subway', 140, 'ea', 190, 'received', 'material.tile', 0.35],
+    ['Cement board', 8, 'ea', 1450, 'received', 'material.concrete', 13.6],
+    ['Waterproofing membrane', 1, 'ea', 12800, 'received', null, null],
+    ['Thinset mortar', 4, 'bag', 2400, 'ordered', 'material.cement', 22.7],
+    ['Grout, charcoal', 2, 'bag', 2800, 'needed', 'material.cement', 11.3],
+    ['Vanity, 36" oak', 1, 'ea', 84000, 'ordered', 'material.lumber', 41],
+    ['Toilet, comfort height', 1, 'ea', 32900, 'needed', 'material.tile', 38],
+    ['Shower valve and trim', 1, 'ea', 41500, 'received', 'material.copper', 2.1],
+    ['Exhaust fan, 110 CFM', 1, 'ea', 13900, 'received', 'material.steel', 4.5],
   ];
-  for (const [description, quantity, unit, estUnitCost, status] of materials) {
+  for (const [description, quantity, unit, estUnitCost, status, factorKey, massKg] of materials) {
     await db.insert(s.projectMaterials).values({
       projectId: project!.id, description, quantity, unit, estUnitCost, status,
-      supplierContactId: hardware.id, createdBy: admin!.id, updatedBy: admin!.id,
+      supplierContactId: hardware.id, emissionFactorKey: factorKey, unitMassKg: massKg,
+      createdBy: admin!.id, updatedBy: admin!.id,
     });
+  }
+
+  // The materials already bought emitted when they were made.
+  const boughtMaterials = await db.select().from(s.projectMaterials).where(and(
+    eq(s.projectMaterials.projectId, project!.id),
+    eq(s.projectMaterials.status, 'received'),
+  ));
+  for (const m of boughtMaterials) {
+    if (!m.emissionFactorKey || !m.unitMassKg) continue;
+    const recorded = await recordActivity(ctx, {
+      type: 'material', amount: m.quantity * m.unitMassKg, unit: 'kg',
+      occurredOn: addDays(today, -22), factorKey: m.emissionFactorKey,
+      propertyId: property!.id, sourceType: 'project_material', sourceId: m.id,
+      note: m.description,
+      attributions: [{ entityType: 'project', entityId: project!.id }],
+    });
+    await db.update(s.projectMaterials).set({ activityId: recorded.activity.id })
+      .where(eq(s.projectMaterials.id, m.id));
   }
 
   await db.insert(s.projectTools).values([
@@ -810,6 +995,7 @@ export async function seedDemo(db: DB, opts: { password?: string } = {}): Promis
     ['assets', s.assets], ['locations', s.locations], ['products', s.products],
     ['stockItems', s.stockItems], ['transactions', s.transactions], ['maintenancePlans', s.maintenancePlans],
     ['tasks', s.tasks], ['pets', s.pets], ['storageItems', s.storageItems], ['contacts', s.contacts],
+    ['activities', s.activities], ['emissions', s.emissions], ['interventions', s.interventions],
   ] as Array<[string, any]>) {
     const r = await db.select().from(table);
     counts[name] = r.length;

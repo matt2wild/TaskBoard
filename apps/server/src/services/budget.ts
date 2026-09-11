@@ -5,7 +5,7 @@ import type { Ctx } from '../core/ctx.js';
 import { badRequest } from '../core/errors.js';
 import { logActivity } from '../core/activity.js';
 import {
-  budgetAllocations, categories, payees, splitAttributions, transactionSplits, transactions,
+  attributions, budgetAllocations, categories, payees, transactionSplits, transactions,
 } from '../db/schema.js';
 
 export interface AttributionRef { entityType: AttributableType | string; entityId: string }
@@ -92,9 +92,12 @@ export async function attachCost(ctx: Ctx, input: AttachCostInput): Promise<{
     made.push(row!);
     const attrs = s.attributions ?? [];
     if (attrs.length) {
-      await ctx.db.insert(splitAttributions).values(
-        attrs.map((a) => ({ splitId: row!.id, entityType: a.entityType, entityId: a.entityId })),
-      );
+      await ctx.db.insert(attributions).values(
+        attrs.map((a) => ({
+          sourceKind: 'split', sourceId: row!.id,
+          entityType: a.entityType, entityId: a.entityId,
+        })),
+      ).onConflictDoNothing();
     }
   }
   await logActivity(ctx.db, {
@@ -111,12 +114,13 @@ export async function spentOn(
   const rows = await ctx.db.select({
     total: sql<number>`coalesce(sum(${transactionSplits.amount}), 0)`,
     count: sql<number>`count(distinct ${transactions.id})`,
-  }).from(splitAttributions)
-    .innerJoin(transactionSplits, eq(transactionSplits.id, splitAttributions.splitId))
+  }).from(attributions)
+    .innerJoin(transactionSplits, eq(transactionSplits.id, attributions.sourceId))
     .innerJoin(transactions, eq(transactions.id, transactionSplits.transactionId))
     .where(and(
-      eq(splitAttributions.entityType, entityType),
-      eq(splitAttributions.entityId, entityId),
+      eq(attributions.sourceKind, 'split'),
+      eq(attributions.entityType, entityType),
+      eq(attributions.entityId, entityId),
       isNull(transactions.deletedAt),
       eq(transactions.type, 'expense'),
     ));
@@ -129,18 +133,19 @@ export async function spentOnMany(
   const out = new Map<string, number>(ids.map((i) => [i, 0]));
   if (!ids.length) return out;
   const rows = await ctx.db.select({
-    id: splitAttributions.entityId,
+    id: attributions.entityId,
     total: sql<number>`coalesce(sum(${transactionSplits.amount}), 0)`,
-  }).from(splitAttributions)
-    .innerJoin(transactionSplits, eq(transactionSplits.id, splitAttributions.splitId))
+  }).from(attributions)
+    .innerJoin(transactionSplits, eq(transactionSplits.id, attributions.sourceId))
     .innerJoin(transactions, eq(transactions.id, transactionSplits.transactionId))
     .where(and(
-      eq(splitAttributions.entityType, entityType),
-      inArray(splitAttributions.entityId, ids),
+      eq(attributions.sourceKind, 'split'),
+      eq(attributions.entityType, entityType),
+      inArray(attributions.entityId, ids),
       isNull(transactions.deletedAt),
       eq(transactions.type, 'expense'),
     ))
-    .groupBy(splitAttributions.entityId);
+    .groupBy(attributions.entityId);
   for (const r of rows) out.set(r.id, Number(r.total));
   return out;
 }

@@ -569,6 +569,10 @@ export const projectMaterials = sqliteTable('project_material', {
   supplierContactId: text('supplier_contact_id'),
   transactionId: text('transaction_id'),
   storageItemId: text('storage_item_id'),
+  emissionFactorKey: text('emission_factor_key'),
+  /** Mass per unit, so "62 tiles" can meet a factor published per kilogram. */
+  unitMassKg: real('unit_mass_kg'),
+  activityId: text('activity_id'),
   ...audit,
 }, (t) => [index('material_project_ix').on(t.projectId), index('material_status_ix').on(t.status)]);
 
@@ -716,12 +720,26 @@ export const transactionSplits = sqliteTable('transaction_split', {
   sort: integer('sort').notNull().default(0),
 }, (t) => [index('split_transaction_ix').on(t.transactionId), index('split_category_ix').on(t.categoryId)]);
 
-export const splitAttributions = sqliteTable('split_attribution', {
+/**
+ * The shared attribution ledger (INT-007). A household measure — a transaction
+ * split, or an activity that emitted something — is linked to the thing it was
+ * for. One table, so "what has this furnace cost and emitted?" is one query
+ * rather than two subsystems that have to be kept in agreement.
+ */
+export const attributions = sqliteTable('attribution', {
   id: pk(),
-  splitId: text('split_id').notNull().references(() => transactionSplits.id, { onDelete: 'cascade' }),
+  sourceKind: text('source_kind').notNull(),
+  sourceId: text('source_id').notNull(),
   entityType: text('entity_type').notNull(),
   entityId: text('entity_id').notNull(),
-}, (t) => [index('attribution_entity_ix').on(t.entityType, t.entityId), index('attribution_split_ix').on(t.splitId)]);
+  createdAt: text('created_at').notNull().$defaultFn(now),
+}, (t) => [
+  // Distinct names: SQLite index names are global, and the table this replaces
+  // still exists while the additive migration runs.
+  index('attr_entity_ix').on(t.entityType, t.entityId),
+  index('attr_source_ix').on(t.sourceKind, t.sourceId),
+  uniqueIndex('attr_uq').on(t.sourceKind, t.sourceId, t.entityType, t.entityId),
+]);
 
 export const transactionLineItems = sqliteTable('transaction_line_item', {
   id: pk(),
@@ -753,6 +771,10 @@ export const recurringBills = sqliteTable('recurring_bill', {
   scheduleId: text('schedule_id'),
   leadDays: integer('lead_days').notNull().default(5),
   everyMonths: integer('every_months').notNull().default(1),
+  /** When set, paying this bill asks for a quantity and records an activity. */
+  meteredUnit: text('metered_unit'),
+  emissionFactorKey: text('emission_factor_key'),
+  meterAssetId: text('meter_asset_id'),
   active: integer('active', { mode: 'boolean' }).notNull().default(true),
   ...audit,
 });
@@ -783,6 +805,8 @@ export const productCategories = sqliteTable('product_category', {
   name: text('name').notNull(),
   slug: text('slug').notNull(),
   isFood: integer('is_food', { mode: 'boolean' }).notNull().default(true),
+  /** Default emission factor for everything in this category. */
+  emissionFactorKey: text('emission_factor_key'),
   sort: integer('sort').notNull().default(0),
   ...audit,
 }, (t) => [uniqueIndex('product_category_slug_uq').on(t.slug)]);
@@ -806,6 +830,10 @@ export const products = sqliteTable('product', {
   imageFileId: text('image_file_id'),
   nutrition: json<Record<string, number>>('nutrition'),
   spec: json<Record<string, unknown>>('spec'),
+  /** Overrides the category's factor for this specific product. */
+  emissionFactorKey: text('emission_factor_key'),
+  /** Mass of one default unit, so a factor per kilogram can be applied to "1 can". */
+  unitMassKg: real('unit_mass_kg'),
   notes: text('notes'),
   ...audit,
 }, (t) => [index('product_name_ix').on(t.name), index('product_category_ix').on(t.categoryId)]);
@@ -1251,6 +1279,143 @@ export const serviceAccounts = sqliteTable('service_account', {
   recurringBillId: text('recurring_bill_id'),
   ...audit,
 });
+
+/* ────────────────────── greenhouse gas and energy ───────────────────── */
+
+export const emissionFactors = sqliteTable('emission_factor', {
+  id: pk(),
+  /** Stable lookup key, e.g. `electricity.grid`, `food.beef`, `material.concrete`. */
+  key: text('key').notNull(),
+  name: text('name').notNull(),
+  category: text('category').notNull(),
+  /** The unit the coefficient is expressed per: kwh, therm, gal, kg, mi, m3. */
+  activityUnit: text('activity_unit').notNull(),
+  kgPerUnit: real('kg_per_unit').notNull(),
+  scope: integer('scope').notNull().default(3),
+  region: text('region'),
+  validFrom: text('valid_from'),
+  validTo: text('valid_to'),
+  source: text('source'),
+  confidence: text('confidence').notNull().default('medium'),
+  notes: text('notes'),
+  isDefault: integer('is_default', { mode: 'boolean' }).notNull().default(false),
+  archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
+  ...audit,
+}, (t) => [
+  index('factor_key_ix').on(t.key),
+  index('factor_category_ix').on(t.category),
+]);
+
+/** An asset that counts something: a meter, or a vehicle odometer (GHG-008). */
+export const meters = sqliteTable('meter', {
+  assetId: text('asset_id').primaryKey(),
+  kind: text('kind').notNull(),
+  unit: text('unit').notNull(),
+  emissionFactorKey: text('emission_factor_key'),
+  multiplier: real('multiplier').notNull().default(1),
+  rolloverAt: real('rollover_at'),
+  installedOn: text('installed_on'),
+  replacedMeterAssetId: text('replaced_meter_asset_id'),
+  serial: text('serial'),
+  ...audit,
+});
+
+/** A household event with a physical quantity. The input to an emission. */
+export const activities = sqliteTable('activity', {
+  id: pk(),
+  propertyId: text('property_id'),
+  locationId: text('location_id'),
+  type: text('type').notNull(),
+  amount: real('amount').notNull(),
+  unit: text('unit').notNull(),
+  occurredOn: text('occurred_on').notNull(),
+  note: text('note'),
+  /** One event, both measures: the transaction that paid for this, if any. */
+  transactionId: text('transaction_id'),
+  /** What produced this activity: stock_movement, waste_log, project_material… */
+  sourceType: text('source_type'),
+  sourceId: text('source_id'),
+  readingId: text('reading_id'),
+  ...audit,
+}, (t) => [
+  index('activity_date_ix').on(t.occurredOn),
+  index('activity_type_ix').on(t.type),
+  index('activity_source_ix').on(t.sourceType, t.sourceId),
+  index('activity_transaction_ix').on(t.transactionId),
+]);
+
+export const emissions = sqliteTable('emission', {
+  id: pk(),
+  activityId: text('activity_id').notNull().references(() => activities.id, { onDelete: 'cascade' }),
+  factorId: text('factor_id'),
+  factorKey: text('factor_key').notNull(),
+  /** Snapshot: correcting a factor later must not rewrite last year (GHG-005). */
+  factorKgPerUnit: real('factor_kg_per_unit').notNull(),
+  quantityInFactorUnit: real('quantity_in_factor_unit').notNull(),
+  factorUnit: text('factor_unit').notNull(),
+  gCo2e: integer('g_co2e').notNull(),
+  scope: integer('scope').notNull(),
+  category: text('category').notNull(),
+  ...audit,
+}, (t) => [
+  index('emission_activity_ix').on(t.activityId),
+  index('emission_scope_ix').on(t.scope),
+]);
+
+export const carbonTargets = sqliteTable('carbon_target', {
+  id: pk(),
+  /** `YYYY` for an annual target, `YYYY-MM` for a month. */
+  period: text('period').notNull(),
+  gCo2e: integer('g_co2e').notNull(),
+  note: text('note'),
+  ...audit,
+}, (t) => [uniqueIndex('carbon_target_uq').on(t.period)]);
+
+export const interventionTemplates = sqliteTable('intervention_template', {
+  id: pk(),
+  key: text('key').notNull(),
+  name: text('name').notNull(),
+  category: text('category').notNull(),
+  descriptionMd: text('description_md'),
+  typicalCost: integer('typical_cost'),
+  embodiedGCo2e: integer('embodied_g_co2e'),
+  lifetimeYears: integer('lifetime_years').notNull().default(20),
+  /** How to estimate the saving: which fuel it displaces and at what efficiency. */
+  savingModel: json<{
+    kind: 'fuel_switch' | 'reduce' | 'generate';
+    fuel?: string;
+    existingEfficiency?: number;
+    replacementCop?: number;
+    fraction?: number;
+    annualKwh?: number;
+    assumedAnnualUnits?: number;
+    assumedUnit?: string;
+  }>('saving_model'),
+  ...audit,
+}, (t) => [uniqueIndex('intervention_template_key_uq').on(t.key)]);
+
+export const interventions = sqliteTable('intervention', {
+  id: pk(),
+  templateKey: text('template_key'),
+  name: text('name').notNull(),
+  descriptionMd: text('description_md'),
+  category: text('category').notNull().default('other'),
+  propertyId: text('property_id'),
+  targetAssetId: text('target_asset_id'),
+  capitalCost: integer('capital_cost'),
+  embodiedGCo2e: integer('embodied_g_co2e').notNull().default(0),
+  annualSavingKwh: real('annual_saving_kwh'),
+  annualSavingCost: integer('annual_saving_cost'),
+  annualSavingGCo2e: integer('annual_saving_g_co2e').notNull().default(0),
+  /** `measured` when computed from this household's own activity data. */
+  basis: text('basis').notNull().default('estimated'),
+  basisNote: text('basis_note'),
+  lifetimeYears: integer('lifetime_years').notNull().default(20),
+  projectId: text('project_id'),
+  status: text('status').notNull().default('candidate'),
+  notesMd: text('notes_md'),
+  ...audit,
+}, (t) => [index('intervention_status_ix').on(t.status)]);
 
 /* ─────────────────────────────── jobs ───────────────────────────────── */
 

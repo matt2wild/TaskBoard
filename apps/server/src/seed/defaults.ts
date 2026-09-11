@@ -2,9 +2,10 @@
 import { eq, sql } from 'drizzle-orm';
 import type { DB } from '../db/index.js';
 import {
-  assetCategories, categories, maintenanceTemplates, productCategories, projectTemplates,
-  speciesProfiles, storageCategories,
+  assetCategories, categories, emissionFactors, interventionTemplates, maintenanceTemplates,
+  productCategories, projectTemplates, speciesProfiles, storageCategories,
 } from '../db/schema.js';
+import { FACTOR_SEEDS, INTERVENTION_TEMPLATES, PRODUCT_CATEGORY_FACTORS } from './factors.js';
 
 /** Appendix B of the requirements, as data. Idempotent: safe on every boot. */
 
@@ -284,14 +285,43 @@ export async function seedDefaults(db: DB): Promise<{ seeded: string[] }> {
 
   if (await isEmpty(db, productCategories)) {
     for (const [parentName, children, isFood] of PRODUCT_CATEGORIES) {
-      const [parent] = await db.insert(productCategories)
-        .values({ name: parentName, slug: slug(parentName), isFood }).returning();
+      const parentSlug = slug(parentName);
+      const [parent] = await db.insert(productCategories).values({
+        name: parentName, slug: parentSlug, isFood,
+        emissionFactorKey: PRODUCT_CATEGORY_FACTORS[parentSlug] ?? null,
+      }).returning();
       for (const [i, child] of children.entries()) {
-        await db.insert(productCategories)
-          .values({ name: child, slug: slug(child), parentId: parent!.id, isFood, sort: i });
+        const childSlug = slug(child);
+        await db.insert(productCategories).values({
+          name: child, slug: childSlug, parentId: parent!.id, isFood, sort: i,
+          emissionFactorKey: PRODUCT_CATEGORY_FACTORS[childSlug] ?? null,
+        });
       }
     }
     seeded.push('productCategories');
+  }
+
+  if (await isEmpty(db, emissionFactors)) {
+    for (const f of FACTOR_SEEDS) {
+      await db.insert(emissionFactors).values({
+        key: f.key, name: f.name, category: f.category,
+        activityUnit: f.activityUnit, kgPerUnit: f.kgPerUnit, scope: f.scope,
+        region: f.region ?? null, source: f.source, confidence: f.confidence,
+        notes: f.notes ?? null, isDefault: true,
+      });
+    }
+    seeded.push('emissionFactors');
+  }
+
+  if (await isEmpty(db, interventionTemplates)) {
+    for (const i of INTERVENTION_TEMPLATES) {
+      await db.insert(interventionTemplates).values({
+        key: i.key, name: i.name, category: i.category, descriptionMd: i.descriptionMd,
+        typicalCost: i.typicalCost, embodiedGCo2e: i.embodiedGCo2e,
+        lifetimeYears: i.lifetimeYears, savingModel: i.savingModel,
+      });
+    }
+    seeded.push('interventionTemplates');
   }
 
   if (await isEmpty(db, storageCategories)) {

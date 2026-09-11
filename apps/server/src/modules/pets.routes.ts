@@ -12,6 +12,7 @@ import { crudRoutes } from '../core/crud.js';
 import { requireWrite } from '../core/auth.js';
 import { badRequest, notFound } from '../core/errors.js';
 import { attachCost, spentOn } from '../services/budget.js';
+import { emittedBy } from '../services/carbon.js';
 import {
   dosesDueToday, giveDose, materialiseDoses, runOutProjection, weightTrend,
 } from '../services/pets.js';
@@ -127,7 +128,7 @@ export function petRoutes(app: FastifyInstance): void {
     const id = (req.params as { id: string }).id;
     const pet = (await req.ctx.db.select().from(pets).where(eq(pets.id, id)).limit(1))[0];
     if (!pet) throw notFound('Pet');
-    const [visits, journal, conditions, labs, doses, spend, weight, runOut] = await Promise.all([
+    const [visits, journal, conditions, labs, doses, spend, weight, runOut, carbon] = await Promise.all([
       req.ctx.db.select().from(petVisits)
         .where(and(eq(petVisits.petId, id), isNull(petVisits.deletedAt))).orderBy(desc(petVisits.visitedAt)).limit(50),
       req.ctx.db.select().from(petJournal)
@@ -143,6 +144,7 @@ export function petRoutes(app: FastifyInstance): void {
       spentOn(req.ctx, 'pet', id),
       weightTrend(req.ctx, id),
       runOutProjection(req.ctx, id),
+      emittedBy(req.ctx, 'pet', id),
     ]);
 
     const labSeries = new Map<string, Array<{ takenAt: string; value: number; refLow: number | null; refHigh: number | null; unit: string | null }>>();
@@ -160,6 +162,7 @@ export function petRoutes(app: FastifyInstance): void {
       weight,
       runOut,
       spend: { ...spend, currency: req.ctx.household.currency },
+      carbon,
       adherence: {
         window: adherence.length,
         given: adherence.filter((d) => d.status === 'given').length,

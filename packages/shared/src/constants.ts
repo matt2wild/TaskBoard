@@ -22,6 +22,10 @@ export const ATTRIBUTABLE = [
   'asset', 'project', 'pet', 'location', 'property', 'maintenance_record',
   'product', 'storage_item', 'goal', 'task',
 ] as const;
+
+/** Kinds of measure the shared attribution ledger carries (INT-007). */
+export const MEASURE_KINDS = ['split', 'activity'] as const;
+export type MeasureKind = typeof MEASURE_KINDS[number];
 export type AttributableType = typeof ATTRIBUTABLE[number];
 
 export const TASK_STATUS = ['open', 'in_progress', 'blocked', 'done', 'cancelled'] as const;
@@ -99,7 +103,7 @@ export type DocType = typeof DOC_TYPES[number];
 
 export const NOTIFICATION_EVENTS = [
   'task.due', 'task.overdue', 'maintenance.due', 'warranty.expiring', 'bill.due',
-  'budget.threshold', 'project.budget_threshold', 'food.expiring', 'stock.low',
+  'budget.threshold', 'project.budget_threshold', 'carbon.threshold', 'food.expiring', 'stock.low',
   'pet.dose_due', 'pet.dose_missed', 'pet.vaccination_due', 'pet.refill_low',
   'loan.return_due', 'comment.mention', 'digest.daily', 'digest.weekly',
 ] as const;
@@ -120,6 +124,7 @@ export const TAG_COLOURS = [
 ] as const;
 
 export const MODULE_KEYS = [
-  'tasks', 'maintenance', 'projects', 'budget', 'food', 'storage', 'tools', 'pets', 'contacts', 'documents',
+  'tasks', 'maintenance', 'projects', 'budget', 'carbon', 'food', 'storage', 'tools',
+  'pets', 'contacts', 'documents',
 ] as const;
 export type ModuleKey = typeof MODULE_KEYS[number];

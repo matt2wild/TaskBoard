@@ -10,6 +10,7 @@ import {
   stockItems, tasks, taskAssignees, transactions, warranties, wasteLog,
 } from '../db/schema.js';
 import { monthSummary, monthOf, spentOnMany } from '../services/budget.js';
+import { footprint } from '../services/carbon.js';
 import { expiringSoon, lowStockList } from '../services/stock.js';
 import { dosesDueToday } from '../services/pets.js';
 import { decorateTasks } from './tasks.routes.js';
@@ -73,6 +74,31 @@ export function dashboardRoutes(app: FastifyInstance): void {
       : [];
 
     const budget = await monthSummary(ctx, monthOf(ctx.today));
+
+    // The same month last year is the only comparison that means anything for
+    // a household, because heating dominates and seasons are not alike.
+    const month = monthOf(ctx.today);
+    const lastYearMonth = `${Number(month.slice(0, 4)) - 1}${month.slice(4)}`;
+    const monthEnd = (m: string) => {
+      const [y, mm] = m.split('-').map(Number) as [number, number];
+      return `${m}-${String(new Date(Date.UTC(y, mm, 0)).getUTCDate()).padStart(2, '0')}`;
+    };
+    const [carbonNow, carbonThen, carbonTarget] = await Promise.all([
+      footprint(ctx, `${month}-01`, monthEnd(month)),
+      footprint(ctx, `${lastYearMonth}-01`, monthEnd(lastYearMonth)),
+      (async () => {
+        const { carbonTargets } = await import('../db/schema.js');
+        const year = ctx.today.slice(0, 4);
+        const rows = await ctx.db.select().from(carbonTargets)
+          .where(and(eq(carbonTargets.period, year), isNull(carbonTargets.deletedAt))).limit(1);
+        if (!rows[0]) return null;
+        const ytd = await footprint(ctx, `${year}-01-01`, ctx.today);
+        return {
+          period: year, gCo2e: rows[0].gCo2e, ytd: ytd.total,
+          pct: rows[0].gCo2e > 0 ? Math.round((ytd.total / rows[0].gCo2e) * 100) : null,
+        };
+      })(),
+    ]);
     const bills = billRows
       .filter((b) => b.schedule?.nextDue && b.schedule.nextDue <= addDays(ctx.today, q.billDays))
       .map((b) => ({
@@ -96,6 +122,17 @@ export function dashboardRoutes(app: FastifyInstance): void {
         loansOut: loanRows.length,
         warrantiesExpiring: warrantyRows.length,
         billsDueSoon: bills.length,
+      },
+      carbon: {
+        month,
+        gCo2e: carbonNow.total,
+        lastYearGCo2e: carbonThen.total,
+        changePct: carbonThen.total > 0
+          ? Math.round(((carbonNow.total - carbonThen.total) / carbonThen.total) * 100)
+          : null,
+        byScope: carbonNow.byScope,
+        topCategory: carbonNow.byCategory[0] ?? null,
+        target: carbonTarget,
       },
       tasks: decorated.slice(0, 50),
       expiring: expiring.slice(0, 20),

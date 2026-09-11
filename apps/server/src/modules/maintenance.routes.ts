@@ -273,6 +273,9 @@ export function maintenanceRoutes(app: FastifyInstance): void {
       readings: z.array(z.object({
         metric: z.string(), value: z.number(), unit: z.string().optional(),
       })).optional(),
+      refrigerant: z.object({
+        type: z.string().trim().min(2), kg: z.number().positive(),
+      }).optional(),
     }).parse(req.body);
     const { planId, targetType, targetId, taskId, title, performedAt, minutes, ...extra } = body;
     const result = await recordMaintenance(req.ctx, {

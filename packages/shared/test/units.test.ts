@@ -41,3 +41,33 @@ describe('conversion', () => {
     expect(formatQuantity({ value: 2.5, unit: 'kg' })).toBe('2.5 kg');
   });
 });
+
+describe('energy and distance', () => {
+  it('converts between the units utilities actually bill in', () => {
+    expect(convert(1, 'kwh', 'mj')).toBeCloseTo(3.6, 9);
+    expect(convert(1, 'therm', 'kwh')).toBeCloseTo(29.3001, 3);
+    expect(convert(1, 'mmbtu', 'therm')).toBeCloseTo(10, 2);
+    expect(convert(1000, 'wh', 'kwh')).toBeCloseTo(1, 9);
+    expect(convert(1, 'gj', 'mj')).toBeCloseTo(1000, 9);
+  });
+  it('parses meter units people type', () => {
+    expect(parseQuantity('412 kWh')).toEqual({ value: 412, unit: 'kwh' });
+    expect(parseQuantity('78 therms')).toEqual({ value: 78, unit: 'therm' });
+  });
+  it('converts distance for transport factors', () => {
+    expect(convert(1, 'mi', 'km')).toBeCloseTo(1.609344, 6);
+    expect(convert(5, 'km', 'mi')).toBeCloseTo(3.106856, 5);
+  });
+  it('keeps energy and mass apart', () => {
+    expect(areCompatible('kwh', 'therm')).toBe(true);
+    expect(areCompatible('kwh', 'kg')).toBe(false);
+  });
+});
+
+describe('cubic measures, which utilities bill water and gas in', () => {
+  it('converts cubic metres and cubic feet', () => {
+    expect(convert(1, 'm3', 'l')).toBeCloseTo(1000, 6);
+    expect(convert(1, 'ft3', 'gal')).toBeCloseTo(7.48052, 4);
+    expect(parseQuantity('41 m3')).toEqual({ value: 41, unit: 'm3' });
+  });
+});

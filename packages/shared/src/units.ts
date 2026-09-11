@@ -23,6 +23,8 @@ const UNITS: Record<string, UnitDef> = {
   pt: { dim: 'volume', base: 473.176473, system: 'imperial', aliases: ['pint', 'pints'] },
   qt: { dim: 'volume', base: 946.352946, system: 'imperial', aliases: ['quart', 'quarts'] },
   gal: { dim: 'volume', base: 3785.411784, system: 'imperial', aliases: ['gallon', 'gallons'] },
+  m3: { dim: 'volume', base: 1_000_000, system: 'metric', aliases: ['cubic metre', 'cubic meter', 'cubic metres', 'cubic meters', 'm³', 'cbm'] },
+  ft3: { dim: 'volume', base: 28316.846592, system: 'imperial', aliases: ['cubic foot', 'cubic feet', 'cf', 'ft³'] },
 
   mm: { dim: 'length', base: 1, system: 'metric', aliases: ['millimetre', 'millimeter', 'millimetres', 'millimeters'] },
   cm: { dim: 'length', base: 10, system: 'metric', aliases: ['centimetre', 'centimeter', 'centimetres', 'centimeters'] },
@@ -42,6 +44,24 @@ const UNITS: Record<string, UnitDef> = {
 
   min: { dim: 'time', base: 1, system: 'any', aliases: ['minute', 'minutes', 'mins'] },
   h: { dim: 'time', base: 60, system: 'any', aliases: ['hr', 'hrs', 'hour', 'hours'] },
+
+  // Energy, canonical unit megajoule. Household meters read in kWh, therms or
+  // ccf depending on the utility, and emission factors are published in all
+  // three, so they have to be interconvertible rather than merely parallel.
+  mj: { dim: 'energy', base: 1, system: 'any', aliases: ['megajoule', 'megajoules'] },
+  kj: { dim: 'energy', base: 0.001, system: 'any', aliases: ['kilojoule', 'kilojoules'] },
+  gj: { dim: 'energy', base: 1000, system: 'any', aliases: ['gigajoule', 'gigajoules'] },
+  kwh: { dim: 'energy', base: 3.6, system: 'any', aliases: ['kilowatt hour', 'kilowatt-hour', 'kilowatt hours', 'kw h'] },
+  mwh: { dim: 'energy', base: 3600, system: 'any', aliases: ['megawatt hour', 'megawatt hours'] },
+  wh: { dim: 'energy', base: 0.0036, system: 'any', aliases: ['watt hour', 'watt hours'] },
+  therm: { dim: 'energy', base: 105.4804, system: 'imperial', aliases: ['therms', 'thm'] },
+  ccf: { dim: 'energy', base: 108.7, system: 'imperial', aliases: ['hundred cubic feet'] },
+  btu: { dim: 'energy', base: 0.00105506, system: 'imperial', aliases: ['btus', 'british thermal unit'] },
+  mmbtu: { dim: 'energy', base: 1055.06, system: 'imperial', aliases: ['dekatherm', 'mmbtus'] },
+  kcal: { dim: 'energy', base: 0.0041868, system: 'any', aliases: ['calorie', 'calories', 'cal'] },
+
+  mi: { dim: 'length', base: 1609344, system: 'imperial', aliases: ['mile', 'miles'] },
+  km: { dim: 'length', base: 1000000, system: 'metric', aliases: ['kilometre', 'kilometer', 'kilometres', 'kilometers'] },
 };
 
 const LOOKUP: Map<string, string> = (() => {
@@ -104,11 +124,13 @@ export interface Quantity { value: number; unit: string }
 export function parseQuantity(input: string, defaultUnit = 'ea'): Quantity {
   const s = input.trim();
   if (!s) throw new UnitError('empty quantity');
-  const m = s.match(/^([\d.,/\s½¼¾⅓⅔⅛⅜⅝⅞]+)\s*([a-zA-Z"'#]*)\.?$/);
+  // The number part is non-greedy so a unit containing a digit (m3, ft3, R22)
+  // is not swallowed by it.
+  const m = s.match(/^([\d.,/\s½¼¾⅓⅔⅛⅜⅝⅞]+?)\s*([a-zA-Z"'#³²][\w³²"'#.\s]*)?\.?$/);
   if (!m) throw new UnitError(`cannot parse quantity: ${input}`);
   const value = parseNumber(m[1]!);
   if (value == null) throw new UnitError(`cannot parse number in: ${input}`);
-  const rawUnit = (m[2] ?? '').trim();
+  const rawUnit = (m[2] ?? '').trim().replace(/\.$/, '');
   const unit = rawUnit ? normaliseUnit(rawUnit) : defaultUnit;
   if (!unit) throw new UnitError(`unknown unit: ${rawUnit}`);
   return { value, unit };
@@ -141,7 +163,7 @@ export function displayUnit(dim: Dimension, system: 'metric' | 'imperial'): stri
     count: { metric: 'ea', imperial: 'ea' },
     temperature: { metric: 'C', imperial: 'F' },
     time: { metric: 'min', imperial: 'min' },
-    energy: { metric: 'kcal', imperial: 'kcal' },
+    energy: { metric: 'kwh', imperial: 'kwh' },
   };
   return table[dim][system];
 }

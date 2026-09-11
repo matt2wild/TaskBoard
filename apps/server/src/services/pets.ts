@@ -109,6 +109,43 @@ export function registerPetHooks(): void {
   });
 }
 
+/**
+ * A day's feeding, recorded so a pet's footprint sits beside its cost. Called
+ * by the daily pass rather than on every meal: nobody logs each bowl.
+ */
+export async function recordDailyPetFood(ctx: Ctx, on?: string): Promise<number> {
+  const { recordProductEmissions } = await import('./carbon.js');
+  const day = on ?? ctx.today;
+  const active = await ctx.db.select({ id: pets.id, name: pets.name })
+    .from(pets).where(and(eq(pets.status, 'active'), isNull(pets.deletedAt)));
+
+  let recorded = 0;
+  for (const pet of active) {
+    const diet = await ctx.db.select().from(petDietEntries).where(and(
+      eq(petDietEntries.petId, pet.id),
+      isNull(petDietEntries.deletedAt),
+      sql`(${petDietEntries.activeFrom} is null or ${petDietEntries.activeFrom} <= ${day})`,
+      sql`(${petDietEntries.activeTo} is null or ${petDietEntries.activeTo} >= ${day})`,
+    ));
+    for (const entry of diet) {
+      if (!entry.productId) continue;
+      const result = await recordProductEmissions(ctx, {
+        productId: entry.productId,
+        quantity: entry.amount,
+        unit: entry.unit,
+        type: 'pet_food',
+        occurredOn: day,
+        sourceType: 'pet_diet_entry',
+        sourceId: entry.id,
+        note: `${pet.name}, ${entry.timeOfDay}`,
+        attributions: [{ entityType: 'pet', entityId: pet.id }],
+      });
+      if (result) recorded++;
+    }
+  }
+  return recorded;
+}
+
 /** Projects when a medication or food runs out, so refills land in time. */
 export async function runOutProjection(ctx: Ctx, petId: string): Promise<Array<{
   kind: 'medication' | 'food';

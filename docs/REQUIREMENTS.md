@@ -26,29 +26,30 @@
 9. [Module: Maintenance](#9-module-maintenance)
 10. [Module: Renovation Project Planning](#10-module-renovation-project-planning)
 11. [Module: Budgeting](#11-module-budgeting)
-12. [Module: Food and Pantry](#12-module-food-and-pantry)
-13. [Module: General Storage](#13-module-general-storage)
-14. [Module: Tools](#14-module-tools)
-15. [Module: Cat Health](#15-module-cat-health)
-16. [Module: Contacts and Vendors](#16-module-contacts-and-vendors)
-17. [Module: Documents and Attachments](#17-module-documents-and-attachments)
-18. [Module: Dashboard, Notifications and Reminders](#18-module-dashboard-notifications-and-reminders)
-19. [Module Integration Matrix](#19-module-integration-matrix)
-20. [Data Model](#20-data-model)
-21. [API Requirements](#21-api-requirements)
-22. [User Experience Requirements](#22-user-experience-requirements)
-23. [Non-Functional Requirements](#23-non-functional-requirements)
-24. [Self-Hosting, Deployment and Operations](#24-self-hosting-deployment-and-operations)
-25. [Security and Privacy](#25-security-and-privacy)
-26. [Recommended Technical Architecture](#26-recommended-technical-architecture)
-27. [Delivery Plan and Milestones](#27-delivery-plan-and-milestones)
-28. [Acceptance Criteria and Test Strategy](#28-acceptance-criteria-and-test-strategy)
-29. [Risks and Mitigations](#29-risks-and-mitigations)
-30. [Open Questions and Assumptions](#30-open-questions-and-assumptions)
-31. [Glossary](#31-glossary)
-32. [Appendix A: Requirement ID Index](#appendix-a-requirement-id-index)
-33. [Appendix B: Seed Data and Defaults](#appendix-b-seed-data-and-defaults)
-34. [Appendix C: Example User Journeys](#appendix-c-example-user-journeys)
+12. [Module: Greenhouse Gas and Energy](#12-module-greenhouse-gas-and-energy)
+13. [Module: Food and Pantry](#13-module-food-and-pantry)
+14. [Module: General Storage](#14-module-general-storage)
+15. [Module: Tools](#15-module-tools)
+16. [Module: Cat Health](#16-module-cat-health)
+17. [Module: Contacts and Vendors](#17-module-contacts-and-vendors)
+18. [Module: Documents and Attachments](#18-module-documents-and-attachments)
+19. [Module: Dashboard, Notifications and Reminders](#19-module-dashboard-notifications-and-reminders)
+20. [Module Integration Matrix](#20-module-integration-matrix)
+21. [Data Model](#21-data-model)
+22. [API Requirements](#22-api-requirements)
+23. [User Experience Requirements](#23-user-experience-requirements)
+24. [Non-Functional Requirements](#24-non-functional-requirements)
+25. [Self-Hosting, Deployment and Operations](#25-self-hosting-deployment-and-operations)
+26. [Security and Privacy](#26-security-and-privacy)
+27. [Recommended Technical Architecture](#27-recommended-technical-architecture)
+28. [Delivery Plan and Milestones](#28-delivery-plan-and-milestones)
+29. [Acceptance Criteria and Test Strategy](#29-acceptance-criteria-and-test-strategy)
+30. [Risks and Mitigations](#30-risks-and-mitigations)
+31. [Open Questions and Assumptions](#31-open-questions-and-assumptions)
+32. [Glossary](#32-glossary)
+33. [Appendix A: Requirement ID Index](#appendix-a-requirement-id-index)
+34. [Appendix B: Seed Data and Defaults](#appendix-b-seed-data-and-defaults)
+35. [Appendix C: Example User Journeys](#appendix-c-example-user-journeys)
 
 ---
 
@@ -76,6 +77,7 @@ Every requirement has a stable ID (`PREFIX-NNN`), a priority, and an acceptance 
 | MAINT | Maintenance |
 | RENO | Renovation project planning |
 | BUD | Budgeting |
+| GHG | Greenhouse gas and energy |
 | FOOD | Food and pantry |
 | STOR | General storage |
 | TOOL | Tools |
@@ -111,11 +113,12 @@ Homestead is a **self-hosted, single-household, multi-user web application** tha
 | # | Goal | Measure |
 |---|---|---|
 | G1 | One place for all household operational data | Every module listed in scope ships and is usable end to end. |
-| G2 | Modules are integrated, not siloed | The integration matrix in section 19 is fully implemented for Must-priority links. |
+| G2 | Modules are integrated, not siloed | The integration matrix in section 20 is fully implemented for Must-priority links. |
 | G3 | Own your data | 100% of user data exportable in open formats; runs fully offline from the internet. |
 | G4 | Low operational burden | One `docker compose up` to run; backups are a single file/directory; upgrades are a container pull. |
 | G5 | Fast daily capture | Common capture actions (log a purchase, check off a chore, scan a pantry item, record a cat's weight) take under 15 seconds on a phone. |
 | G6 | Trustworthy reminders | Users can rely on the app to surface what needs doing today without opening every module. |
+| G7 | Carbon is a unit of account, not a report | Every asset, project and pet shows what it emitted beside what it cost, from the same ledger, without double entry. |
 
 ### 1.4 Non-goals
 
@@ -138,6 +141,7 @@ Homestead is a **self-hosted, single-household, multi-user web application** tha
 | Maintenance | Recurring and one-off maintenance schedules, service history, warranties, manuals. |
 | Renovation project planning | Multi-phase projects with tasks, dependencies, materials, quotes, permits, contractors, photos, and budgets. |
 | Budgeting | Categories, budgets, transactions, recurring bills, project budgets, goals, reporting, CSV import. |
+| Greenhouse gas and energy | Emission factors, activities, energy metering, embodied and operating carbon, per-entity footprints, carbon budgets, and intervention payback. |
 | Food and pantry | Multiple storage areas, item quantities, expiry tracking, barcode scanning, shopping lists, optional recipes and meal planning. |
 | General storage | Hierarchical locations, containers, item catalogue, QR/label printing, "where is X" search, lending. |
 | Tools | Tool inventory, consumables, batteries, maintenance, loans, project tool lists. |
@@ -192,12 +196,13 @@ Homestead is a **self-hosted, single-household, multi-user web application** tha
 
 1. **Capture first, organise later.** Every module has a fast "quick add" path that requires only the minimum fields; enrichment can happen afterwards.
 2. **Everything links.** Any record can attach documents, link to a transaction, reference a location, and appear on the calendar. Integration is the product.
-3. **The house outlives the software.** All data is exportable in documented, open formats, and the export is complete enough to rebuild the database.
-4. **Local by default.** The application must be fully functional with no outbound internet access. External lookups (barcode databases, weather) are optional enhancements that degrade gracefully.
-5. **Boring technology, one process.** Prefer a single container with an embedded database over a fleet of services. Complexity in the deployment is a bug.
-6. **Mobile is the capture device, desktop is the planning device.** Design the phone experience around scanning, tapping and dictation; design the desktop experience around tables, drag-and-drop and bulk edit.
-7. **Reminders must be trusted.** A reminder that fires late, twice, or not at all is a critical bug, not a papercut.
-8. **No lock-in to Homestead's own conventions.** Use RFC 5545 for recurrence, ISO 4217 for currency, ISO 8601 for dates, GS1 barcodes for products, UCUM-compatible units where practical.
+3. **One event, every measure.** A household event is recorded once and yields all of its consequences. A utility bill is money *and* energy *and* carbon; a binned cucumber is wasted money *and* wasted carbon. Asking a person to enter the same thing twice guarantees one of the two is wrong.
+4. **The house outlives the software.** All data is exportable in documented, open formats, and the export is complete enough to rebuild the database.
+5. **Local by default.** The application must be fully functional with no outbound internet access. External lookups (barcode databases, weather) are optional enhancements that degrade gracefully.
+6. **Boring technology, one process.** Prefer a single container with an embedded database over a fleet of services. Complexity in the deployment is a bug.
+7. **Mobile is the capture device, desktop is the planning device.** Design the phone experience around scanning, tapping and dictation; design the desktop experience around tables, drag-and-drop and bulk edit.
+8. **Reminders must be trusted.** A reminder that fires late, twice, or not at all is a critical bug, not a papercut.
+9. **No lock-in to Homestead's own conventions.** Use RFC 5545 for recurrence, ISO 4217 for currency, ISO 8601 for dates, GS1 barcodes for products, UCUM-compatible units where practical.
 
 ---
 
@@ -225,7 +230,7 @@ Homestead is a **self-hosted, single-household, multi-user web application** tha
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Layering rule:** Feature modules (top row) may depend on shared services (bottom row) and on each other only through the documented integration points in section 19. Shared services never depend on feature modules.
+**Layering rule:** Feature modules (top row) may depend on shared services (bottom row) and on each other only through the documented integration points in section 20. Shared services never depend on feature modules.
 
 ---
 
@@ -241,7 +246,7 @@ Homestead is a **self-hosted, single-household, multi-user web application** tha
 | GEN-004 | M | Deletion of user-created records shall be soft (a `deleted_at` timestamp) with an admin-visible "trash" allowing restore for 30 days (configurable) before permanent purge. |
 | GEN-005 | M | Every entity type shall support free-form **tags** (household-wide tag vocabulary with colour and optional description). |
 | GEN-006 | M | Every entity type shall support a free-form **notes** field with Markdown rendering. |
-| GEN-007 | M | Every entity type shall support **attachments** (see section 17) and **links** to any other entity (polymorphic `entity_link`). |
+| GEN-007 | M | Every entity type shall support **attachments** (see section 18) and **links** to any other entity (polymorphic `entity_link`). |
 | GEN-008 | M | The system shall provide a global search across all modules that returns typed results (e.g. "Tool: Impact driver", "Pantry: Black beans") with keyboard navigation. Results shall respect the caller's permissions. |
 | GEN-009 | M | The system shall maintain an **activity log** (audit trail) of create/update/delete on all entities, recording actor, timestamp, entity, and a field-level diff. Admins can view the log; members can view the log of any entity they can read. |
 | GEN-010 | M | All dates shall be stored in UTC with the household's configured timezone used for display and for scheduling "wall clock" reminders. All-day dates (e.g. expiry dates) shall be stored as calendar dates without a time component. |
@@ -456,9 +461,88 @@ The budgeting module is a **household cash-flow and envelope budget** tool whose
 
 ---
 
-## 12. Module: Food and Pantry
+## 12. Module: Greenhouse Gas and Energy
+
+Emissions are not a report the household writes once a year. They are a **second unit of
+account**, produced by the same events that produce spending, and attributed to the same
+things. Every place the system already asks "what did that cost?" it can ask "what did that
+emit?", and the answer comes from the same ledger machinery (INT-001, section 20.12).
+
+This module is therefore designed as a peer of Budgeting rather than a bolt-on: the
+furnace, the bathroom remodel and the cat each carry a footprint the same way they carry a
+cost, and a single household event — buying 200 gallons of heating oil — is one
+transaction and one activity, recorded once.
 
 ### 12.1 Concepts
+
+- **Activity**: a thing that happened with a physical quantity attached. 412 kWh of grid
+  electricity in March; 200 gallons of heating oil delivered; 2.4 kg of beef bought; 14 kg
+  of food thrown away; 62 tiles installed; 340 miles driven; 1.1 kg of R-410A added to the
+  heat pump. An activity carries an amount, a unit, a date, a property, links to whatever
+  caused it, and an optional link to the transaction that paid for it.
+- **Emission factor**: a coefficient converting an activity into CO₂-equivalent — 5.3 kg
+  CO₂e per therm of gas burned, 0.37 kg per kWh of US grid electricity, 60 kg per kg of
+  beef. Factors carry a source, a region, a validity period and a scope, and are editable:
+  grid intensity differs by a factor of ten between regions, so a shipped default that
+  cannot be corrected is worse than useless.
+- **Emission**: the computed result — activity × factor — stored as integer grams CO₂e
+  together with a snapshot of the factor used. One activity may produce several emissions:
+  burning gas is direct combustion (scope 1) *and* upstream extraction and distribution
+  (scope 3), and they are counted separately because they behave differently.
+- **Scope**, following the GHG Protocol adapted to a household: **1** direct combustion and
+  leakage on the property (furnace, boiler, wood stove, vehicle fuel, refrigerant);
+  **2** purchased electricity; **3** everything embodied or indirect (food, goods,
+  renovation materials, waste, water, services, deliveries).
+- **Meter**: an asset that counts something — an electricity meter, a gas meter, a water
+  meter, an odometer. Readings (MAINT-009) become consumption by differencing, and
+  consumption becomes activity. No new mechanism is needed.
+- **Intervention**: a candidate change with a capital cost, an embodied carbon cost and an
+  annual saving — insulate the attic, swap the oil boiler for a heat pump, fit solar. Its
+  saving is computed from the household's **own measured consumption** where that exists,
+  not from a generic assumption, which is the entire reason for keeping energy data and
+  project planning in one system.
+- **Carbon budget**: an annual or monthly target, tracked exactly as a money budget is.
+
+### 12.2 Requirements
+
+| ID | Pri | Requirement |
+|---|---|---|
+| GHG-001 | M | The system shall maintain an **emission factor** library: name, category, activity unit, kg CO₂e per unit, scope, region, valid-from and valid-to dates, source citation, and notes. Factors shall be editable and extensible by a member; shipped defaults are a starting point, not an authority. |
+| GHG-002 | M | The system shall ship a default factor set covering household energy (electricity, natural gas, heating oil, propane, wood), transport fuels, water, waste by disposal route, food by category, common renovation materials, and refrigerant global warming potentials. Each shall name its source and be marked as an approximate default requiring local verification. |
+| GHG-003 | M | Factor resolution shall select the factor whose region matches the household (falling back to a global default) and whose validity period contains the activity date. Where several match, the most specific region wins. |
+| GHG-004 | M | Users shall record **activities** with amount, unit, activity type, date, property, optional location and optional notes, through a single shared service used by every module, so that behaviour is identical wherever a footprint arises (mirrors BUD-009). |
+| GHG-005 | M | Recording an activity shall compute and store its **emissions** as integer grams CO₂e, one row per applicable factor, each capturing the factor identity and the factor value at the time. Editing a factor later shall never silently rewrite history; a recalculation is an explicit, logged action. |
+| GHG-006 | M | Activities shall carry **attributions** to other entities (asset, project, pet, location, property, product, maintenance record) using the same attribution mechanism as transaction splits, so that "what has this cost?" and "what has this emitted?" are the same shape of question. |
+| GHG-007 | M | Unit conversion shall be automatic where dimensionally valid: an activity in kWh shall resolve against a factor expressed per MJ or per therm; a food quantity in pounds shall resolve against a factor per kilogram. Incompatible units shall be refused with a clear message rather than silently coerced. |
+| GHG-008 | M | **Meter readings**: recording a reading against a metering asset shall derive consumption from the previous reading and create the corresponding activity, handling meter rollover and replacement. |
+| GHG-009 | M | **Utility bills**: paying a recurring bill shall optionally capture the metered quantity alongside the amount, creating one transaction and one activity from a single action. |
+| GHG-010 | M | **Food**: putting shopping away shall create embodied-emission activities from product quantities and their category factors. Products may carry a specific factor that overrides the category. |
+| GHG-011 | M | **Food waste**: discarding stock shall record the wasted emissions as well as the wasted cost, and the waste report shall show both. |
+| GHG-012 | M | **Renovation materials**: purchasing or installing project materials shall create embodied-emission activities attributed to the project, and the project overview shall show embodied carbon beside the budget. |
+| GHG-013 | S | **Maintenance**: a maintenance record may capture refrigerant added or recovered, applying the refrigerant's global warming potential as a scope 1 emission; and may record vendor travel where the household cares to. |
+| GHG-014 | S | **Transport**: trips shall be recordable with distance and mode, attributed to the errand that caused them (a project supply run, a vet visit), using per-mile factors by vehicle type. |
+| GHG-015 | S | **Pets**: pet food consumption shall contribute emissions attributed to the pet, so a pet's footprint sits beside its cost (CAT-013). |
+| GHG-016 | M | **Reporting**: total footprint for a period, broken down by scope, by category, by month, and by attributed entity; year-on-year comparison; and the per-entity footprint of any asset, project or pet. |
+| GHG-017 | M | The **asset** page shall show operating emissions and embodied emissions beside total cost of ownership, and the **project** page shall show embodied carbon beside spend. |
+| GHG-018 | S | **Carbon budget**: an annual target with monthly pacing, shown against actuals, with threshold notifications at 80% and 100% on the same machinery as budget alerts (BUD-015). |
+| GHG-019 | S | **Interventions**: candidate changes with capital cost, embodied carbon, annual energy saving and annual carbon saving, producing a financial payback period, a carbon payback period and a cost per tonne abated, ranked. |
+| GHG-020 | S | An intervention attached to an asset shall compute its saving from that asset's measured consumption where at least one year of activity data exists, and shall say plainly when it is falling back to a generic estimate. |
+| GHG-021 | S | Accepting an intervention shall create a project in the backlog carrying its cost estimate and its expected saving, feeding the long-range plan (BUD-030, RENO-015). |
+| GHG-022 | S | **Avoided and generated**: on-site generation (solar) and exported energy shall be recordable, reducing the net footprint, and shown separately from reductions in consumption. |
+| GHG-023 | S | The dashboard shall show the current month's footprint against the same month last year, and against the carbon budget where one is set. |
+| GHG-024 | S | **Intensity metrics**: footprint per person and per square foot, for households that want to compare against a benchmark. Benchmarks shall be user-supplied, not asserted by the application. |
+| GHG-025 | C | **Recalculation**: an admin may recompute a period's emissions against current factors, producing a diff and an audit entry rather than an in-place overwrite. |
+| GHG-026 | C | Import of utility history from a CSV of meter readings or billed quantities, reusing the import mapping machinery (BUD-008). |
+| GHG-027 | C | Optional grid-intensity lookup for the household's region, behind the same external-lookup toggle as FOOD-020 and off by default. |
+| GHG-028 | M | Every number shall be traceable: any emission total shall be decomposable to the activities, factors and factor sources behind it. An unexplainable footprint is not worth showing. |
+| GHG-029 | S | The system shall be honest about uncertainty: factor categories carry a qualitative confidence, and reports shall not present household estimates to a false precision. |
+| GHG-030 | W | Supplier-specific or product-level lifecycle data beyond the shipped categories. |
+
+---
+
+## 13. Module: Food and Pantry
+
+### 13.1 Concepts
 
 - **Storage area** (pantry): a food-holding location: kitchen pantry, fridge, freezer, garage chest freezer, spice rack, bar. These are STOR locations flagged `holds_food`, with a temperature class (`ambient`, `refrigerated`, `frozen`).
 - **Product**: a catalogue entry for a kind of food: name, brand, barcode(s), category, default unit, package size, typical shelf life per temperature class, image, nutrition (optional), price history, preferred vendors, tags (vegan, gluten-free, cat-related).
@@ -467,7 +551,7 @@ The budgeting module is a **household cash-flow and envelope budget** tool whose
 - **Recipe** (Should): ingredients (product refs with quantity), steps, servings, tags; supports "can I make this" against stock and "add missing to list".
 - **Meal plan** (Could): calendar of recipes/meals per day; generates a consolidated shopping list.
 
-### 12.2 Requirements
+### 13.2 Requirements
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -497,16 +581,16 @@ The budgeting module is a **household cash-flow and envelope budget** tool whose
 
 ---
 
-## 13. Module: General Storage
+## 14. Module: General Storage
 
-### 13.1 Concepts
+### 14.1 Concepts
 
 - **Location** tree shared with ASSET (section 8), extended with containers (bins, totes, boxes, shelves, drawers, cabinets, pegboards, closets).
 - **Storage item**: a thing you own and want to find later that is not an asset, tool, or consumable stock: seasonal decorations, camping gear, spare parts, cables, keepsakes, documents-in-a-box, leftover renovation materials. Fields: name, description, category, quantity, location (container), photo(s), value (estimated, for insurance), purchase info, condition, tags, "keep until" review date, loan state.
 - **Label**: a printable code (QR + human-readable short code) for a location or container that opens the record when scanned.
 - **Loan**: an item lent to or borrowed from a person (CONT), with dates and return state.
 
-### 13.2 Requirements
+### 14.2 Requirements
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -528,18 +612,18 @@ The budgeting module is a **household cash-flow and envelope budget** tool whose
 
 ---
 
-## 14. Module: Tools
+## 15. Module: Tools
 
 Tools share the asset base (they are durable items with make/model/purchase/warranty/location) but have tool-specific behaviour: consumables, batteries and chargers, calibration/sharpening, project usage, and loans.
 
-### 14.1 Concepts
+### 15.1 Concepts
 
 - **Tool**: a hand or power tool, machine, or measuring instrument. Types: `hand`, `power_corded`, `power_battery`, `pneumatic`, `garden`, `measuring`, `safety`, `other`.
 - **Battery platform**: a manufacturer battery ecosystem (DeWalt 20V MAX, Milwaukee M18, Ryobi ONE+). Batteries and chargers are tracked as tool-like records on a platform; tools declare their platform.
 - **Consumable spec**: what a tool eats (blade type/size, bit type, sandpaper grit/size, string trimmer line, oil). Matched to pantry/storage products for stock and reorder.
 - **Tool kit**: a named grouping (Drywall kit, Plumbing kit, Car kit) for checkout as a set.
 
-### 14.2 Requirements
+### 15.2 Requirements
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -560,16 +644,16 @@ Tools share the asset base (they are durable items with make/model/purchase/warr
 
 ---
 
-## 15. Module: Cat Health
+## 16. Module: Cat Health
 
-### 15.1 Concepts
+### 16.1 Concepts
 
 - **Pet**: a companion animal. Species-agnostic data model (`species`, `breed`, `sex`, `neutered`, `dob`, `microchip`, `colour/markings`, `photo`, `weight history`, `status` active/deceased/rehomed) with cat-specific defaults and templates. First release ships cat presets only.
 - **Health record types**: vaccination, medication (course or ongoing), preventive (flea/tick/worming), vet visit, procedure/surgery, lab result, condition/diagnosis, symptom observation, weight, dental, grooming, behaviour note, litter/elimination note.
 - **Care plan**: the pet's standing instructions: feeding schedule and amounts (linked products), medications with dose schedule, litter routine, environmental notes, emergency contacts, vet. Printable/shareable with a Limited-role house-sitter.
 - **Provider**: vet clinic, emergency vet, groomer, boarder, pet insurer (CONT contacts with a `pet_provider` type).
 
-### 15.2 Requirements
+### 16.2 Requirements
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -597,7 +681,7 @@ Tools share the asset base (they are durable items with make/model/purchase/warr
 
 ---
 
-## 16. Module: Contacts and Vendors
+## 17. Module: Contacts and Vendors
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -610,7 +694,7 @@ Tools share the asset base (they are durable items with make/model/purchase/warr
 
 ---
 
-## 17. Module: Documents and Attachments
+## 18. Module: Documents and Attachments
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -627,9 +711,9 @@ Tools share the asset base (they are durable items with make/model/purchase/warr
 
 ---
 
-## 18. Module: Dashboard, Notifications and Reminders
+## 19. Module: Dashboard, Notifications and Reminders
 
-### 18.1 Dashboard
+### 19.1 Dashboard
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -639,7 +723,7 @@ Tools share the asset base (they are durable items with make/model/purchase/warr
 | DASH-004 | S | A **weekly review** page shall summarise the past week (completed, spent, wasted food, new items) and the coming week, suitable for a Sunday planning session. |
 | DASH-005 | C | Widgets for a wall-mounted tablet/kiosk mode: large text, auto-refresh, limited-role kiosk login. |
 
-### 18.2 Notifications
+### 19.2 Notifications
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -654,24 +738,25 @@ Tools share the asset base (they are durable items with make/model/purchase/warr
 
 ---
 
-## 19. Module Integration Matrix
+## 20. Module Integration Matrix
 
 This is the heart of the product. Each cell describes the concrete link; `M/S/C` is the priority of that link.
 
-| From ↓ / To → | Tasks | Assets/Locations | Maintenance | Projects | Budget | Food/Pantry | Storage | Tools | Cats | Contacts | Documents |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| **Tasks** | — | Task can reference a location/asset (S) | Task instance is the due-work unit (M) | Project tasks (M) | Bill tasks (M) | Shopping tasks (S) | Loan-return tasks (S) | Loan-return tasks (M) | Dose and appointment tasks (M) | Assignee may be a vendor (S) | Attachments (M) |
-| **Assets** | | — | Plans and history per asset (M) | Project creates/updates assets on completion (S) | Purchase, repair and TCO (M) | Consumable specs → products (S) | Assets located in tree; shared tree (M) | Tools are assets (M) | — | Purchase vendor, installer (M) | Manuals, warranties, receipts (M) |
-| **Maintenance** | | | — | Plan can be "adopted" into a project (C) | Completion cost → transaction (M) | Consumables used → stock decrement (M) | Parts from storage (S) | Required tools, tool maintenance (M) | Pet monitoring plans reuse recurring engine (M) | Vendor-performed work (S) | Service invoices (M) |
-| **Projects** | | | | — | Project budget, actuals, committed (M) | Materials that are consumables (S) | Leftovers filed to storage (S) | Tools needed, checkout (M) | — | Quotes, contractors (M) | Plans, permits, photos (M) |
-| **Budget** | | | | | — | Grocery trips and price history (M) | Sale proceeds on disposal (S) | Tool purchases (M) | Per-pet costs (M) | Payees (M) | Receipts (M) |
-| **Food/Pantry** | | | | | | — | Food areas are storage locations (M) | Tool consumables use the product catalogue (M) | Pet food and meds as stock; run-out projection (M) | Preferred stores (S) | Product images (S) |
-| **Storage** | | | | | | | — | Tools live in the tree; labels shared (M) | Pet supplies (S) | Loans to people (S) | Item photos (M) |
-| **Tools** | | | | | | | | — | — | Loans, repair shops (M) | Manuals (S) |
-| **Cats** | | | | | | | | | — | Vets, insurers, sitters (M) | Certificates, lab results (S) |
-| **Contacts** | | | | | | | | | | — | Contracts, quotes (S) |
+| From ↓ / To → | Tasks | Assets/Locations | Maintenance | Projects | Budget | Carbon | Food/Pantry | Storage | Tools | Cats | Contacts | Documents |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Tasks** | — | Task can reference a location/asset (S) | Task instance is the due-work unit (M) | Project tasks (M) | Bill tasks (M) | Meter-reading tasks (S) | Shopping tasks (S) | Loan-return tasks (S) | Loan-return tasks (M) | Dose and appointment tasks (M) | Assignee may be a vendor (S) | Attachments (M) |
+| **Assets** |  | — | Plans and history per asset (M) | Project creates/updates assets on completion (S) | Purchase, repair and TCO (M) | Operating and embodied emissions; meters are assets (M) | Consumable specs → products (S) | Assets located in tree; shared tree (M) | Tools are assets (M) | — | Purchase vendor, installer (M) | Manuals, warranties, receipts (M) |
+| **Maintenance** |  |  | — | Plan can be "adopted" into a project (C) | Completion cost → transaction (M) | Refrigerant charge and recovery as scope 1 (S) | Consumables used → stock decrement (M) | Parts from storage (S) | Required tools, tool maintenance (M) | Pet monitoring plans reuse recurring engine (M) | Vendor-performed work (S) | Service invoices (M) |
+| **Projects** |  |  |  | — | Project budget, actuals, committed (M) | Embodied carbon of materials; interventions become projects (M) | Materials that are consumables (S) | Leftovers filed to storage (S) | Tools needed, checkout (M) | — | Quotes, contractors (M) | Plans, permits, photos (M) |
+| **Budget** |  |  |  |  | — | A paid utility bill is one transaction and one activity (M) | Grocery trips and price history (M) | Sale proceeds on disposal (S) | Tool purchases (M) | Per-pet costs (M) | Payees (M) | Receipts (M) |
+| **Carbon** |  |  |  |  |  | — | Embodied food carbon; wasted food is wasted carbon (M) | Disposal route decides the waste factor (S) | Tool fuel and consumables (C) | Pet food footprint beside pet cost (S) | Utility providers (S) | Factor sources (C) |
+| **Food/Pantry** |  |  |  |  |  |  | — | Food areas are storage locations (M) | Tool consumables use the product catalogue (M) | Pet food and meds as stock; run-out projection (M) | Preferred stores (S) | Product images (S) |
+| **Storage** |  |  |  |  |  |  |  | — | Tools live in the tree; labels shared (M) | Pet supplies (S) | Loans to people (S) | Item photos (M) |
+| **Tools** |  |  |  |  |  |  |  |  | — | — | Loans, repair shops (M) | Manuals (S) |
+| **Cats** |  |  |  |  |  |  |  |  |  | — | Vets, insurers, sitters (M) | Certificates, lab results (S) |
+| **Contacts** |  |  |  |  |  |  |  |  |  |  | — | Contracts, quotes (S) |
 
-### 19.1 Integration requirements
+### 20.1 Integration requirements
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -680,15 +765,17 @@ This is the heart of the product. Each cell describes the concrete link; `M/S/C`
 | INT-003 | M | Every entity page shall have a **"Related"** panel listing linked entities grouped by type, with the ability to add links inline. |
 | INT-004 | M | Deleting an entity that is referenced shall be prevented or converted to archive/retire, never cascade-deleting financial or historical records. |
 | INT-005 | S | A **"what does this cost?"** computation shall be available on assets, projects, pets, tools and locations, summing directly attributed transactions plus (optionally) transactions attributed to child entities. |
+| INT-007 | M | Money and emissions shall share **one attribution ledger**. An attribution links a measure (a transaction split, or an activity) to the entity it was for, so a single query answers what any asset, project or pet has cost *and* emitted. Adding a third measure later shall not require a third mechanism. |
+| INT-008 | M | Where one household event has both a price and a footprint — a utility bill, a grocery trip, a materials order — it shall be recorded once and produce both, never entered twice. |
 | INT-006 | S | A **"what do I need?"** computation shall be available on maintenance plans and projects: required tools (owned/available?), required consumables (in stock?), producing a shopping list and a tool wishlist in one action. |
 
 ---
 
-## 20. Data Model
+## 21. Data Model
 
 This section lists entities, key fields and relationships. Types: `id` = ULID/UUID; `ts` = UTC timestamp; `date` = calendar date; `money` = integer minor units + currency; `json` = structured JSON.
 
-### 20.1 Platform
+### 21.1 Platform
 
 | Entity | Key fields |
 |---|---|
@@ -712,7 +799,7 @@ This section lists entities, key fields and relationships. Types: `id` = ULID/UU
 | `attachment` | id, file_id, entity_type, entity_id, doc_type, title, description, sort |
 | `label_code` | id, code, entity_type, entity_id, assigned_at |
 
-### 20.2 Tasks
+### 21.2 Tasks
 
 | Entity | Key fields |
 |---|---|
@@ -728,7 +815,7 @@ This section lists entities, key fields and relationships. Types: `id` = ULID/UU
 | `automation_rule` | id, board_id, trigger(json), action(json), active |
 | `time_entry` | id, task_id, user_id, started_at, ended_at, minutes, note |
 
-### 20.3 Registry
+### 21.3 Registry
 
 | Entity | Key fields |
 |---|---|
@@ -740,7 +827,7 @@ This section lists entities, key fields and relationships. Types: `id` = ULID/UU
 | `warranty` | id, asset_id, provider_contact_id, type, start_date, end_date, coverage_md, cost_transaction_id |
 | `reading` | id, asset_id, metric, value, unit, taken_at, note |
 
-### 20.4 Maintenance
+### 21.4 Maintenance
 
 | Entity | Key fields |
 |---|---|
@@ -751,7 +838,7 @@ This section lists entities, key fields and relationships. Types: `id` = ULID/UU
 | `maintenance_consumption` | record_id, product_id, stock_item_id, quantity |
 | `maintenance_template` | id, category_id, title, rrule, mode, description_md, checklist(json), consumables(json), tools(json) |
 
-### 20.5 Projects
+### 21.5 Projects
 
 | Entity | Key fields |
 |---|---|
@@ -768,7 +855,7 @@ This section lists entities, key fields and relationships. Types: `id` = ULID/UU
 | `decision` | id, project_id, decided_at, title, rationale_md, alternatives_md, decided_by |
 | `project_template` | id, name, phases(json), tasks(json), materials(json), permits(json) |
 
-### 20.6 Budget
+### 21.6 Budget
 
 | Entity | Key fields |
 |---|---|
@@ -786,7 +873,26 @@ This section lists entities, key fields and relationships. Types: `id` = ULID/UU
 | `goal_contribution` | goal_id, transaction_id |
 | `import_profile` | id, name, mapping(json) |
 
-### 20.7 Food and consumables
+### 21.7 Greenhouse gas and energy
+
+| Entity | Key fields |
+|---|---|
+| `emission_factor` | id, key, name, category, activity_unit, kg_per_unit, scope(1/2/3), region, valid_from, valid_to, source, confidence(high/medium/low), notes, is_default, archived |
+| `activity` | id, property_id, location_id, type, amount, unit, occurred_on, note, transaction_id, source_type, source_id, reading_id, created_by |
+| `emission` | id, activity_id, factor_id, factor_kg_per_unit (snapshot), quantity_in_factor_unit, g_co2e (integer), scope, category |
+| `attribution` | id, source_kind(split/activity), source_id, entity_type, entity_id — **shared with the budget module** (INT-007) |
+| `meter` | asset_id, kind(electricity/gas/water/oil/odometer), unit, factor_key, multiplier, rollover_at, installed_on, replaced_meter_id |
+| `carbon_target` | id, period(YYYY or YYYY-MM), g_co2e, note |
+| `intervention` | id, name, description_md, target_asset_id, category, capital_cost, embodied_g_co2e, annual_saving_kwh, annual_saving_g_co2e, basis(measured/estimated), lifetime_years, project_id, status, notes_md |
+| `intervention_template` | id, name, category, description_md, typical_cost, embodied_g_co2e, saving_model(json), lifetime_years |
+
+**Rules.** `g_co2e` is an integer count of grams, for the same reason money is an integer
+count of cents. `emission` snapshots the factor value so that correcting a factor never
+silently rewrites last year. `attribution` replaces the earlier `split_attribution`: the
+same table now carries both measures, which is what makes a combined per-entity footprint
+a single query rather than two subsystems that happen to agree.
+
+### 21.8 Food and consumables
 
 | Entity | Key fields |
 |---|---|
@@ -802,7 +908,7 @@ This section lists entities, key fields and relationships. Types: `id` = ULID/UU
 | `meal_plan_entry` | id, date, slot, recipe_id?, text |
 | `waste_log` | id, stock_item_id, quantity, reason, ts, est_cost |
 
-### 20.8 Storage and tools
+### 21.9 Storage and tools
 
 | Entity | Key fields |
 |---|---|
@@ -817,7 +923,7 @@ This section lists entities, key fields and relationships. Types: `id` = ULID/UU
 | `tool_kit` | id, name; `tool_kit_member` (kit_id, asset_id) |
 | `tool_usage` | id, asset_id, project_id?, task_id?, ts, hours, note |
 
-### 20.9 Pets
+### 21.10 Pets
 
 | Entity | Key fields |
 |---|---|
@@ -835,14 +941,14 @@ This section lists entities, key fields and relationships. Types: `id` = ULID/UU
 | `pet_insurance` | id, pet_id, insurer_contact_id, policy_number, premium_bill_id, deductible, notes_md |
 | `pet_claim` | id, insurance_id, visit_id, claimed_amount, reimbursed_transaction_id, status |
 
-### 20.10 Contacts
+### 21.11 Contacts
 
 | Entity | Key fields |
 |---|---|
 | `contact` | id, name, type, phones(json), email, website, address(json), notes_md, rating, preferred, specialties(json) |
 | `service_account` | id, contact_id, kind, account_number(enc), emergency_phone, recurring_bill_id |
 
-### 20.11 Referential rules
+### 21.12 Referential rules
 
 - All foreign keys `ON DELETE RESTRICT` except join tables and child rows owned by the parent (`ON DELETE CASCADE`).
 - `entity_type` discriminators are validated by an application-level registry; the registry is the single source of truth for which types may link to which.
@@ -850,7 +956,7 @@ This section lists entities, key fields and relationships. Types: `id` = ULID/UU
 
 ---
 
-## 21. API Requirements
+## 22. API Requirements
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -867,7 +973,7 @@ This section lists entities, key fields and relationships. Types: `id` = ULID/UU
 
 ---
 
-## 22. User Experience Requirements
+## 23. User Experience Requirements
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -888,7 +994,7 @@ This section lists entities, key fields and relationships. Types: `id` = ULID/UU
 
 ---
 
-## 23. Non-Functional Requirements
+## 24. Non-Functional Requirements
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -902,13 +1008,13 @@ This section lists entities, key fields and relationships. Types: `id` = ULID/UU
 | NFR-008 | M | **Portability**: runs on linux/amd64 and linux/arm64 (Raspberry Pi 4/5, Apple-silicon Docker). |
 | NFR-009 | M | **Observability**: structured JSON logs with request IDs; `/healthz` and `/readyz`; optional Prometheus `/metrics`. |
 | NFR-010 | S | **Upgradability**: forward-only migrations; every release documents breaking changes; a pre-upgrade automatic backup is taken. |
-| NFR-011 | M | **Testability**: unit tests for domain logic (recurrence, budgeting math, stock math), integration tests for API, E2E smoke tests for critical flows (see section 28). |
+| NFR-011 | M | **Testability**: unit tests for domain logic (recurrence, budgeting math, stock math), integration tests for API, E2E smoke tests for critical flows (see section 29). |
 | NFR-012 | S | **Maintainability**: modular monolith with module boundaries enforced by lint rules; a CONTRIBUTING guide; ADRs for major decisions. |
-| NFR-013 | M | **Licensing**: all dependencies OSI-approved and compatible with the project's chosen licence (recommend AGPL-3.0 or MIT; decision in section 30). |
+| NFR-013 | M | **Licensing**: all dependencies OSI-approved and compatible with the project's chosen licence (recommend AGPL-3.0 or MIT; decision in section 31). |
 
 ---
 
-## 24. Self-Hosting, Deployment and Operations
+## 25. Self-Hosting, Deployment and Operations
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -931,7 +1037,7 @@ This section lists entities, key fields and relationships. Types: `id` = ULID/UU
 
 ---
 
-## 25. Security and Privacy
+## 26. Security and Privacy
 
 | ID | Pri | Requirement |
 |---|---|---|
@@ -949,11 +1055,11 @@ This section lists entities, key fields and relationships. Types: `id` = ULID/UU
 
 ---
 
-## 26. Recommended Technical Architecture
+## 27. Recommended Technical Architecture
 
 This section is a recommendation, not a requirement, to make implementation estimates concrete. The existing repository is a Create React App project (React 17, `react-beautiful-dnd`, `react-hook-form`) with no backend. Both CRA and `react-beautiful-dnd` are unmaintained; the recommendation is to **retire the CRA scaffold and rebuild** while reusing the board concepts and demo data shapes.
 
-### 26.1 Stack
+### 27.1 Stack
 
 | Layer | Choice | Rationale |
 |---|---|---|
@@ -973,7 +1079,7 @@ This section is a recommendation, not a requirement, to make implementation esti
 | Tests | Vitest (unit/integration), Playwright (E2E) | Playwright is pre-installed in the target dev environment. |
 | Packaging | Single Dockerfile (multi-stage), `docker compose` reference, GHCR multi-arch build via GitHub Actions | OPS-001/002. |
 
-### 26.2 Repository layout (proposed monorepo)
+### 27.2 Repository layout (proposed monorepo)
 
 ```
 /apps
@@ -988,13 +1094,13 @@ This section is a recommendation, not a requirement, to make implementation esti
 /deploy          Dockerfile, docker-compose.yml, reverse-proxy examples
 ```
 
-### 26.3 Module structure (server)
+### 27.3 Module structure (server)
 
 Each module exposes: `routes.ts` (HTTP), `service.ts` (domain logic), `repo.ts` (data access), `events.ts` (published/handled domain events), `schema.ts` (Drizzle tables), and `seeds.ts` (default data). Cross-module calls go through the service layer or events only; a lint rule forbids importing another module's `repo`.
 
 ---
 
-## 27. Delivery Plan and Milestones
+## 28. Delivery Plan and Milestones
 
 Each milestone is independently useful and shippable. Priorities marked M in a module are required for that module's milestone; S items are included where the milestone note says so.
 
@@ -1006,15 +1112,15 @@ Each milestone is independently useful and shippable. Priorities marked M in a m
 | **M3 — Food, Storage, Labels** | Product catalogue, stock, scanning, expiry, par levels, shopping lists (live), put-away, price history (S), waste log (S), storage items, container views, labels/QR, loans (S). | Restock session of 20 scanned items in under 3 minutes on a phone; "where is X" finds a labelled bin; expiring-food digest arrives. |
 | **M4 — Tools and Projects** | Tool profiles, battery platforms, consumable specs, loans, kits (S); projects with phases, tasks, materials, tools-needed, budget rollup, quotes, photos, permits (S), decisions (S), templates (S), Gantt (S). | A sample bathroom remodel template runs end to end with budget actuals from transactions and tool checkout. |
 | **M5 — Cat Health** | Pet profiles, vaccinations, medications with dose tasks, preventives, visits, weight, journal, conditions, care sheet with Limited-role sharing, diet with pantry run-out, costs, insurance (S), lab results (S). | Twice-daily medication generates dose tasks with push notifications and missed-dose flags; care sheet viewable by a house-sitter account and nothing else. |
-| **M6 — Polish and Integrations** | Web push, ntfy/Gotify/webhooks, OIDC, PostgreSQL backend, ICS feeds, SSE live updates, weekly review, long-range planning view, importers (Grocy/HomeBox/YNAB), PWA offline writes, custom fields, saved views, automations. | All S-priority cross-module links in section 19 implemented; performance targets in NFR-001 met on the reference host. |
+| **M6 — Polish and Integrations** | Web push, ntfy/Gotify/webhooks, OIDC, PostgreSQL backend, ICS feeds, SSE live updates, weekly review, long-range planning view, importers (Grocy/HomeBox/YNAB), PWA offline writes, custom fields, saved views, automations. | All S-priority cross-module links in section 20 implemented; performance targets in NFR-001 met on the reference host. |
 
 Estimated relative effort (for credit planning): M0 15%, M1 15%, M2 15%, M3 17%, M4 15%, M5 13%, M6 10%.
 
 ---
 
-## 28. Acceptance Criteria and Test Strategy
+## 29. Acceptance Criteria and Test Strategy
 
-### 28.1 Test layers
+### 29.1 Test layers
 
 | Layer | Tooling | Coverage expectation |
 |---|---|---|
@@ -1026,13 +1132,13 @@ Estimated relative effort (for credit planning): M0 15%, M1 15%, M2 15%, M3 17%,
 | Performance | k6 or autocannon in CI (nightly) | NFR-001 dataset seeded; p95 assertions. |
 | Security | CI | Dependency audit, container scan, CSP header test, upload sanitisation tests. |
 
-### 28.2 Definition of done (per requirement)
+### 29.2 Definition of done (per requirement)
 
 A requirement is done when: the behaviour is implemented behind the documented API and UI; unit/integration tests cover it; it is documented in the user manual; it works on SQLite (and Postgres if M6 is reached); and it is demonstrated in demo mode data.
 
 ---
 
-## 29. Risks and Mitigations
+## 30. Risks and Mitigations
 
 | Risk | Impact | Mitigation |
 |---|---|---|
@@ -1047,7 +1153,7 @@ A requirement is done when: the behaviour is implemented behind the documented A
 
 ---
 
-## 30. Open Questions and Assumptions
+## 31. Open Questions and Assumptions
 
 | # | Question | Working assumption |
 |---|---|---|
@@ -1064,7 +1170,7 @@ A requirement is done when: the behaviour is implemented behind the documented A
 
 ---
 
-## 31. Glossary
+## 32. Glossary
 
 | Term | Definition |
 |---|---|
@@ -1072,6 +1178,10 @@ A requirement is done when: the behaviour is implemented behind the documented A
 | Attribution | The link from a transaction split to the household entity the money was for. |
 | Care sheet | The printable summary of a pet's daily care instructions. |
 | Container | A location of type bin/box/shelf/drawer that holds items. |
+| Activity | A household event with a physical quantity: kWh used, litres burned, kilograms bought or binned. The input to an emission. |
+| Attribution | The link from a measure — a transaction split or an activity — to the entity it was for. |
+| Emission factor | Kilograms of CO₂e per unit of activity, with a source, a region and a validity period. |
+| Embodied carbon | Emissions from making and delivering a thing, counted when it is bought, as opposed to emissions from running it. |
 | Fixed schedule | Recurrence anchored to the calendar regardless of completion date. |
 | Floating schedule | Recurrence anchored to the last completion date. |
 | Lot / stock item | A physical quantity of a product in a specific location with its own expiry. |
@@ -1079,7 +1189,8 @@ A requirement is done when: the behaviour is implemented behind the documented A
 | Plan (maintenance) | A definition of recurring or one-off maintenance work that generates tasks. |
 | Product | A catalogue entry for a kind of consumable (food or non-food). |
 | Property | A building or parcel owned or managed by the household. |
-| Reading | A dated numeric measurement against an asset. |
+| Reading | A dated numeric measurement against an asset. A meter reading becomes consumption by differencing. |
+| Scope 1 / 2 / 3 | Direct combustion and leakage on the property / purchased electricity / everything else, embodied or indirect. |
 | Split | One line of a transaction with its own amount, category and attribution. |
 | Task instance | A concrete task row, possibly generated from a schedule. |
 
@@ -1217,3 +1328,21 @@ Alex searches "christmas" on their phone. The result "Storage: Christmas lights 
 
 **C.5 Weekly grocery run (Pantry + Budget + Cats).**
 The shopping list has auto-added items below par (oat milk, cat litter, black beans) plus Pepper's wet food (projected to run out in 4 days from the diet schedule). Alex checks items off in the store; a price-history hint shows the litter is cheaper at the other store. At home, the put-away sheet lists purchased products with default areas and expiry dates; Alex confirms in one tap per item, attaches the receipt photo, enters the $96.40 total, and the transaction is split by product category automatically with pet items attributed to Pepper.
+
+**C.6 The oil boiler (Carbon + Energy + Assets + Projects + Budget).**
+The boiler is an asset with an expected life and a delivery history. Each oil delivery is
+entered once: 214 gallons, $687. That single action writes a transaction attributed to the
+boiler and an activity of 214 gallons, which resolves against the heating-oil factor and
+yields 2.18 tCO₂e of scope 1 plus 0.36 t of upstream scope 3. The electricity meter is read
+monthly; differencing the readings produces consumption without anyone typing a kWh figure
+twice. By the end of the first winter the boiler's page shows $2,940 and 9.4 tCO₂e against
+it, side by side, from the same ledger.
+
+Homestead then proposes an intervention it can actually justify: an air-source heat pump.
+Because a year of measured oil consumption exists, the saving is computed from the
+household's own 1,180 gallons rather than a brochure figure — about 11.7 tCO₂e a year
+against the grid intensity already recorded for the region, at a capital cost of $14,000
+and 1.9 t of embodied carbon. That is a carbon payback of roughly two months and a cost of
+about $103 per tonne abated, and the app says plainly which numbers are measured and which
+are assumed. Accepting it creates a project in the backlog carrying both the cost and the
+expected saving, so it appears in the ten-year plan next to the roof.

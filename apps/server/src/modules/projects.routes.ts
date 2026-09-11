@@ -14,6 +14,7 @@ import { crudRoutes } from '../core/crud.js';
 import { requireWrite } from '../core/auth.js';
 import { badRequest, notFound } from '../core/errors.js';
 import { attachCost, spentOn, spentOnMany } from '../services/budget.js';
+import { emittedBy, emittedByMany, estimateEmbodied, tryRecordActivity } from '../services/carbon.js';
 import { addToShoppingList } from '../services/stock.js';
 import { decorateTasks } from './tasks.routes.js';
 
@@ -72,7 +73,10 @@ export function projectRoutes(app: FastifyInstance): void {
       req.ctx.db.select().from(projectLocations).where(eq(projectLocations.projectId, id)),
     ]);
 
-    const spend = await spentOn(req.ctx, 'project', id);
+    const [spend, carbon] = await Promise.all([
+      spentOn(req.ctx, 'project', id),
+      emittedBy(req.ctx, 'project', id),
+    ]);
     const committed = quoteRows
       .filter((q) => q.status === 'accepted')
       .reduce((a, b) => a + (b.amount ?? 0), 0)
@@ -113,6 +117,13 @@ export function projectRoutes(app: FastifyInstance): void {
         materialsEstimate: materials.reduce((a, b) => a + estimatedTotal(b), 0),
         materialsActual: materials.reduce((a, b) => a + (b.actualCost ?? 0), 0),
         currency: req.ctx.household.currency,
+      },
+      carbon: {
+        /** What the materials actually bought have emitted. */
+        embodiedGCo2e: carbon.total,
+        activities: carbon.count,
+        /** What the full materials list would emit, for planning. */
+        estimatedGCo2e: await estimateEmbodied(req.ctx, materials),
       },
       progress: {
         taskTotal: taskRows.length,
@@ -175,6 +186,8 @@ export function projectRoutes(app: FastifyInstance): void {
       estUnitCost: z.number().int().nullable().optional(),
       status: z.enum(MATERIAL_STATUS).default('needed'),
       supplierContactId: z.string().nullable().optional(),
+      emissionFactorKey: z.string().nullable().optional(),
+      unitMassKg: z.number().positive().nullable().optional(),
     }),
     update: z.object({
       phaseId: z.string().nullable().optional(),
@@ -186,6 +199,8 @@ export function projectRoutes(app: FastifyInstance): void {
       status: z.enum(MATERIAL_STATUS).optional(),
       supplierContactId: z.string().nullable().optional(),
       storageItemId: z.string().nullable().optional(),
+      emissionFactorKey: z.string().nullable().optional(),
+      unitMassKg: z.number().positive().nullable().optional(),
     }),
     searchColumns: ['description'],
     filterColumns: ['projectId', 'phaseId', 'status', 'supplierContactId', 'productId'],
@@ -228,14 +243,34 @@ export function projectRoutes(app: FastifyInstance): void {
       })),
     });
 
+    let embodied = 0;
     for (const [i, r] of rows.entries()) {
+      // Materials arrive with a footprint as well as a price (GHG-012).
+      let activityId: string | null = null;
+      if (r.emissionFactorKey) {
+        const amount = r.unitMassKg ? r.quantity * r.unitMassKg : r.quantity;
+        const unit = r.unitMassKg ? 'kg' : r.unit;
+        const carbon = await tryRecordActivity(req.ctx, {
+          type: 'material', amount, unit,
+          occurredOn: body.date ?? req.ctx.today,
+          factorKey: r.emissionFactorKey,
+          transactionId: transaction.id,
+          sourceType: 'project_material', sourceId: r.id,
+          note: r.description,
+          attributions: [{ entityType: 'project', entityId: r.projectId }],
+        });
+        if (carbon) { activityId = carbon.activity.id; embodied += carbon.gCo2e; }
+      }
       await req.ctx.db.update(projectMaterials).set({
         actualCost: shares[i] ?? 0, status: body.status,
-        transactionId: transaction.id, updatedBy: req.ctx.user!.id,
+        transactionId: transaction.id, activityId, updatedBy: req.ctx.user!.id,
       }).where(eq(projectMaterials.id, r.id));
     }
     reply.status(201);
-    return { transactionId: transaction.id, updated: rows.length, byProject: [...byProject] };
+    return {
+      transactionId: transaction.id, updated: rows.length,
+      byProject: [...byProject], embodiedGCo2e: embodied,
+    };
   });
 
   app.post('/api/v1/projects/:id/materials/to-shopping-list', async (req) => {
@@ -498,7 +533,10 @@ export function projectRoutes(app: FastifyInstance): void {
 
     const project = (await req.ctx.db.select().from(projects).where(eq(projects.id, id)).limit(1))[0];
     if (!project) throw notFound('Project');
-    const spend = await spentOn(req.ctx, 'project', id);
+    const [spend, carbon] = await Promise.all([
+      spentOn(req.ctx, 'project', id),
+      emittedBy(req.ctx, 'project', id),
+    ]);
 
     const createdAssets: string[] = [];
     for (const a of body.createAssets ?? []) {
@@ -592,11 +630,13 @@ function estimatedTotal(m: { quantity: number; estUnitCost: number | null }): nu
   return Math.round((m.estUnitCost ?? 0) * m.quantity);
 }
 
+
 async function decorateProjects(rows: any[], ctx: any): Promise<any[]> {
   const ids = rows.map((r) => r.id);
   if (!ids.length) return rows;
-  const [spend, taskRows] = await Promise.all([
+  const [spend, carbon, taskRows] = await Promise.all([
     spentOnMany(ctx, 'project', ids),
+    emittedByMany(ctx, 'project', ids),
     ctx.db.select({ projectId: tasks.projectId, status: tasks.status })
       .from(tasks).where(and(inArray(tasks.projectId, ids), isNull(tasks.deletedAt))),
   ]);
@@ -614,6 +654,7 @@ async function decorateProjects(rows: any[], ctx: any): Promise<any[]> {
     return {
       ...r,
       spent,
+      gCo2e: carbon.get(r.id) ?? 0,
       taskTotal: c.total,
       taskDone: c.done,
       pctBudget: r.budgetAmount && r.budgetAmount > 0 ? Math.round((spent / r.budgetAmount) * 100) : null,

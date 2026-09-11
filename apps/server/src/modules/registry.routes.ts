@@ -13,6 +13,7 @@ import { crudRoutes, makeCrud } from '../core/crud.js';
 import { requireWrite } from '../core/auth.js';
 import { badRequest, notFound } from '../core/errors.js';
 import { spentOnMany, spentOn } from '../services/budget.js';
+import { activityFromReading, emittedBy, emittedByMany } from '../services/carbon.js';
 import { locationPaths } from './core.routes.js';
 
 const optionalDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional();
@@ -204,8 +205,9 @@ export function registryRoutes(app: FastifyInstance): void {
       scope: () => eq(assets.kind, 'asset'),
       decorate: async (rows, ctx) => {
         const ids = rows.map((r) => r.id);
-        const [spend, paths, nextDue] = await Promise.all([
+        const [spend, carbon, paths, nextDue] = await Promise.all([
           spentOnMany(ctx, 'asset', ids),
+          emittedByMany(ctx, 'asset', ids),
           locationPaths(ctx.db, rows.map((r) => r.locationId).filter(Boolean) as string[]),
           nextMaintenanceFor(ctx.db, ids),
         ]);
@@ -218,6 +220,7 @@ export function registryRoutes(app: FastifyInstance): void {
           warrantyDaysLeft: r.warrantyExpiry ? diffDays(r.warrantyExpiry, ctx.today) : null,
           totalCost: (r.purchasePrice ?? 0) + (spend.get(r.id) ?? 0),
           maintenanceSpend: spend.get(r.id) ?? 0,
+          gCo2e: carbon.get(r.id) ?? 0,
           nextMaintenanceDue: nextDue.get(r.id) ?? null,
           replacementYear: estimateReplacementYear(r, ctx.today),
         }));
@@ -229,7 +232,7 @@ export function registryRoutes(app: FastifyInstance): void {
     const id = (req.params as { id: string }).id;
     const asset = (await req.ctx.db.select().from(assets).where(eq(assets.id, id)).limit(1))[0];
     if (!asset) throw notFound('Asset');
-    const [records, readingRows, warrantyRows, spend] = await Promise.all([
+    const [records, readingRows, warrantyRows, spend, carbon] = await Promise.all([
       req.ctx.db.select().from(maintenanceRecords).where(and(
         eq(maintenanceRecords.targetType, 'asset'), eq(maintenanceRecords.targetId, id),
         isNull(maintenanceRecords.deletedAt),
@@ -238,6 +241,7 @@ export function registryRoutes(app: FastifyInstance): void {
         .orderBy(desc(readings.takenAt)).limit(500),
       req.ctx.db.select().from(warranties).where(and(eq(warranties.assetId, id), isNull(warranties.deletedAt))),
       spentOn(req.ctx, 'asset', id),
+      emittedBy(req.ctx, 'asset', id),
     ]);
     const events = [
       ...(asset.purchaseDate ? [{ at: asset.purchaseDate, kind: 'purchased', label: 'Purchased', amount: asset.purchasePrice }] : []),
@@ -245,7 +249,10 @@ export function registryRoutes(app: FastifyInstance): void {
       ...records.map((r) => ({ at: r.performedAt, kind: r.kind, label: r.title, id: r.id })),
       ...(asset.retiredAt ? [{ at: asset.retiredAt, kind: 'retired', label: 'Retired' }] : []),
     ].sort((a, b) => (a.at < b.at ? 1 : -1));
-    return { asset, events, records, readings: readingRows, warranties: warrantyRows, spend };
+    return {
+      asset, events, records, readings: readingRows, warranties: warrantyRows,
+      spend, carbon,
+    };
   });
 
   app.post('/api/v1/assets/:id/retire', async (req) => {
@@ -329,6 +336,9 @@ export function registryRoutes(app: FastifyInstance): void {
       afterCreate: async (row, ctx) => {
         const { checkReadingTriggers } = await import('../services/maintenance.js');
         await checkReadingTriggers(ctx, row.assetId, row.metric, row.value);
+        // A meter reading is a running total; the difference is the consumption,
+        // so nobody has to type a kWh figure twice (GHG-008).
+        await activityFromReading(ctx, row.id).catch(() => undefined);
       },
     },
   });
