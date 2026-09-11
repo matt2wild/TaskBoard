@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { formatCo2e } from '@homestead/shared';
 import { api } from '../lib/api';
 import { useDebounced, useQuery } from '../lib/hooks';
 import { useApp } from '../App';
@@ -192,7 +193,7 @@ export function AssetDetail() {
         )}
       </header>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <StatTile label="Age" value={a.ageYears != null ? `${a.ageYears}y` : '—'}
                   sub={a.installedDate ? `since ${a.installedDate}` : undefined} icon="clock" />
         <StatTile label="Cost of ownership" value={money(a.totalCost, app.currency)}
@@ -204,6 +205,11 @@ export function AssetDetail() {
         <StatTile label="Replace by" value={a.replacementYear ?? '—'}
                   sub={a.replacementCostEstimate ? money(a.replacementCostEstimate, app.currency) : 'no estimate'}
                   icon="repeat" />
+        {/* What it has cost and what it has emitted come from the same ledger. */}
+        <StatTile label="Emitted" value={formatCo2e(a.gCo2e)} icon="leaf"
+                  sub={timeline.data.carbon.count
+                    ? `${timeline.data.carbon.count} activities`
+                    : 'nothing attributed yet'} />
       </div>
 
       {a.notesMd && <Panel title="Notes"><p className="text-sm whitespace-pre-line">{a.notesMd}</p></Panel>}

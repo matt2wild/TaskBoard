@@ -12,6 +12,7 @@ const NAV = [
   { to: '/maintenance', label: 'Maintenance', icon: 'wrench' },
   { to: '/projects', label: 'Projects', icon: 'hammer' },
   { to: '/budget', label: 'Budget', icon: 'coin' },
+  { to: '/carbon', label: 'Footprint', icon: 'leaf' },
   { to: '/food', label: 'Food', icon: 'can' },
   { to: '/storage', label: 'Storage', icon: 'box' },
   { to: '/tools', label: 'Tools', icon: 'toolbox' },

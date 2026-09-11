@@ -3,13 +3,18 @@
 A self-hosted home management application. One household, one container, your data.
 
 It keeps a canonical record of the house, the things in it, the work done to it, the money
-spent on it, the food in it, and the animals living in it — and connects those records so
-each module makes the others smarter.
+spent on it, the carbon it emits, the food in it, and the animals living in it — and
+connects those records so each module makes the others smarter.
 
 Completing "replace the furnace filter" writes the maintenance history, takes a filter off
 the shelf, books the cost against the furnace, reschedules the next change 90 days from
 today, and puts a filter on the shopping list because you are now below par. That is the
 whole idea.
+
+The same idea applies to carbon. An oil delivery is one event that is money *and* gallons
+*and* emissions, entered once; the heat pump that would replace the boiler is then argued
+for in dollars per tonne against what this house actually burned last winter, not against
+a national average.
 
 ```
 docker compose -f deploy/docker-compose.yml up -d
@@ -25,6 +30,7 @@ Then open http://localhost:8080 and create your household.
 | **Assets and maintenance** | Appliances, systems and fixtures with age, warranty, cost of ownership and history. A shipped library of ~30 maintenance templates keyed by category, so adding a water heater offers "flush the tank yearly" rather than a blank form. |
 | **Renovation projects** | Phases, tasks, materials, quotes, permits, inspections, a decision log, live budget against actuals, and a retrospective that files the leftovers into storage and creates the new asset. |
 | **Budget** | Transactions with splits and *attributions*: money is recorded against the asset, project or pet it was for, not just a category. Monthly budgets with rollover, recurring bills, CSV import with duplicate detection, and a ten-year forecast built from asset lifespans and project ideas. |
+| **Footprint** | Carbon as a second unit of account, not a report. Emissions come from the same events as the costs and attach to the same assets, projects and pets. Meter readings difference into consumption on their own; bills carry their quantity; a factor library of ~70 entries names its source and confidence for every number. Interventions — insulation, a heat pump, solar — are costed against this house's own fuel use and its own electricity price, ranked by what a tonne actually costs, and an accepted one becomes a project. |
 | **Food and pantry** | Barcode scanning, expiry tracking, par levels that keep the shopping list current, a put-away flow that turns a finished trip into stock plus one receipt plus price history, waste logging, and recipes measured against what is actually in the house. |
 | **Storage** | A location tree from floor down to bin, QR labels you can stick on a tote, "where is X" search with a breadcrumb, loans, a declutter queue and an insurance valuation. |
 | **Tools** | Tool inventory with battery platforms, consumable specs matched to products, kits, checkout against a project, and a rent-or-buy wishlist. |
@@ -41,6 +47,12 @@ notifications, and an export that does not need Homestead to read it.
   JSON Lines, plus every file you uploaded, plus a manifest.
 - **Reminders are trustworthy.** Every reminder is keyed to its occasion, so running the
   daily pass twice, or catching up after the container was down, produces it exactly once.
+- **One event, every measure.** A thing is entered once and counted in every unit that
+  applies to it — money, quantity, energy, carbon. Nothing is reconciled after the fact,
+  because nothing was ever recorded twice.
+- **No number without its derivation.** Every emission stores the factor and the factor
+  value it was computed with, so any total decomposes back to the activities behind it.
+  Correcting a factor never silently rewrites what you already recorded.
 - **Boring technology.** One container, one SQLite file, one directory of uploads.
 
 ## Running it
@@ -57,9 +69,9 @@ docker compose exec homestead node apps/server/dist/cli.js seed-demo
 ```
 
 That creates a household with a house, its systems, a bathroom remodel mid-flight, a
-stocked pantry, tools (one lent to a neighbour), and two cats — one of them newly
-diagnosed with hyperthyroidism and on twice-daily medication. Sign in as `matt` /
-`homestead`.
+stocked pantry, tools (one lent to a neighbour), an oil-heated winter with meter readings
+behind it, and two cats — one of them newly diagnosed with hyperthyroidism and on
+twice-daily medication. Sign in as `matt` / `homestead`.
 
 ### Command line
 
@@ -83,7 +95,7 @@ node apps/server/dist/cli.js <command>
 
 ```
 npm install
-npm test           # 112 tests across the domain packages and the API
+npm test           # 168 tests across the domain packages and the API
 npm run dev        # server on :8080, web on :5173
 ```
 
@@ -91,10 +103,11 @@ The web dev server proxies `/api` to the server, so sign-in works as it does in 
 
 | Path | What lives there |
 |---|---|
-| `packages/shared` | Recurrence, money, units and the shared vocabulary. Pure, heavily tested. |
+| `packages/shared` | Recurrence, money, carbon, units and the shared vocabulary. Pure, heavily tested. |
 | `apps/server` | Fastify API, Drizzle schema, the scheduler, the CLI. |
 | `apps/web` | React client. No UI framework, no chart library, no icon font. |
 | `docs/REQUIREMENTS.md` | The full requirements document this was built from. |
+| `docs/adr/` | Why the load-bearing decisions were made, and what they cost. |
 | `legacy/` | The original TaskBoard prototype, kept for reference. |
 
 The API documents itself at `/api/v1/openapi.json`, with a short guide at `/api/v1/docs`.

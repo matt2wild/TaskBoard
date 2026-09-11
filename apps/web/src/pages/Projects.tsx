@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { formatCo2e } from '@homestead/shared';
 import { api } from '../lib/api';
 import { useQuery } from '../lib/hooks';
 import { useApp } from '../App';
@@ -199,7 +200,7 @@ export function ProjectDetail() {
         {p.descriptionMd && <p className="text-sm dim mt-2 max-w-2xl">{p.descriptionMd}</p>}
       </header>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <StatTile label="Tasks" value={`${data.progress.taskDone}/${data.progress.taskTotal}`}
                   sub={data.progress.blocked ? `${data.progress.blocked} blocked` : 'nothing blocked'} icon="check" />
         <StatTile label="Spent" value={money(data.budget.spent, app.currency)}
@@ -210,6 +211,11 @@ export function ProjectDetail() {
                   sub="accepted quotes and orders" icon="handshake" />
         <StatTile label="Materials" value={money(data.budget.materialsEstimate, app.currency)}
                   sub={`${data.materials.filter((m: any) => m.status === 'needed').length} still needed`} icon="box" />
+        {/* A renovation costs money and carbon, and both are worth seeing before it starts. */}
+        <StatTile label="Embodied carbon" value={formatCo2e(data.carbon.embodiedGCo2e)} icon="leaf"
+                  sub={data.carbon.estimatedGCo2e > data.carbon.embodiedGCo2e
+                    ? `${formatCo2e(data.carbon.estimatedGCo2e)} for the full list`
+                    : `${data.carbon.activities} recorded`} />
       </div>
 
       {data.budget.amount != null && <Progress value={data.budget.spent} max={data.budget.amount} />}

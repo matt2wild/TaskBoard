@@ -32,6 +32,7 @@ All configuration is environment variables. Any variable `X` can instead be supp
 | `GOTIFY_URL`, `GOTIFY_TOKEN` | empty | Push through Gotify. |
 | `NOTIFY_WEBHOOK_URL` | empty | POST notifications as JSON to your own endpoint. |
 | `HOMESTEAD_EXTERNAL_LOOKUPS` | `false` | Opt in to looking unknown barcodes up externally. |
+| `HOMESTEAD_WEB_DIR` | next to the server | The built web client. Found automatically; set it only for an unusual layout. |
 
 ## Backups
 
@@ -93,6 +94,35 @@ down for three days, the next start catches up and sends each outstanding remind
 Check it is running: Settings → Data shows the last successful pass and any failed
 deliveries. Force one with `node apps/server/dist/cli.js run-scheduler`.
 
+## Carbon factors
+
+The shipped emission factors are approximations drawn from public datasets — the US EPA
+GHG Emission Factors Hub for energy and transport, Poore & Nemecek (2018) for food, the
+ICE database for materials, IPCC AR5 for refrigerant GWPs, DEFRA for water and waste.
+Each one carries its source and a confidence, and each is marked as a default requiring
+local verification. They are a starting point, not an authority.
+
+The one worth correcting first is your grid. `electricity.grid` ships as a national
+average; your utility publishes its own figure, usually in an annual disclosure, and it
+can differ by a factor of three. Footprint → Factors → edit, and say where the number
+came from.
+
+Correcting a factor does not change anything already recorded. Every emission stores the
+factor value it was computed with, so history stays as it was measured. To bring an
+existing period onto a corrected factor, use Footprint → Factors → **Recalculate**: it
+previews the diff, writes nothing until you apply, and records what it did in the audit
+log.
+
+Two ways a household's energy reaches the system, and they do not double count:
+
+- **Bills.** Give a recurring bill its `meteredUnit` and factor key, and paying it records
+  the cost and the emissions together.
+- **Meters.** Put a meter on an asset (Footprint → Energy → Meters), then record the dial
+  reading. Consumption is the difference from the previous reading, so nobody types a
+  usage figure that a bill already carries. Where a bill covers a period a meter already
+  measured, the bill attaches its cost to the existing activity rather than creating a
+  second one.
+
 ## Health checks
 
 | Endpoint | Meaning |
@@ -113,3 +143,13 @@ and redo the edit; the first write won by design.
 
 **A tool shows as unavailable.** It is out on loan or marked as needing repair. Storage →
 Lent out returns it.
+
+**An activity recorded no emissions.** Either no factor matched its type, or the quantity
+could not be converted into the factor's unit — "2 cans" only becomes kilograms if the
+product says what a can weighs. Set `unitMassKg` on the product, or record the activity in
+a unit compatible with the factor. The activity is still saved either way; it just carries
+no emission rows.
+
+**An intervention says it saves nothing.** It is measured against fuel this house has no
+record of burning. An induction range correctly shows zero saving in a house with no gas.
+The row says whether it is `measured` or `estimated`, and what it was measured from.

@@ -1,5 +1,25 @@
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * The built web app, wherever it happens to sit. Resolving this against the
+ * working directory alone meant `npm start` from the repository root served
+ * nothing at all, which is the one way everyone runs it.
+ */
+function findWebDir(explicit: string | undefined): string {
+  if (explicit) return path.resolve(explicit);
+  const candidates = [
+    path.resolve(here, '../../web/dist'),     // apps/server/{src,dist} -> apps/web/dist
+    path.resolve(here, '../../../web/dist'),  // apps/server/src/x -> apps/web/dist
+    path.resolve(here, 'web'),                // a single-directory deployment
+    path.resolve(process.cwd(), 'apps/web/dist'),
+    path.resolve(process.cwd(), '../web/dist'),
+  ];
+  return candidates.find((dir) => existsSync(path.join(dir, 'index.html'))) ?? candidates[0]!;
+}
 
 /** Reads `VAR` or, when `VAR_FILE` is set, the file it points at (Docker secrets). */
 function env(name: string, fallback?: string): string | undefined {
@@ -32,7 +52,7 @@ export const config = {
   externalLookups: bool(env('HOMESTEAD_EXTERNAL_LOOKUPS')),
   trustProxy: bool(env('TRUST_PROXY')),
   maxUploadBytes: int(env('MAX_UPLOAD_BYTES'), 50 * 1024 * 1024),
-  webDir: env('HOMESTEAD_WEB_DIR', path.resolve('../web/dist'))!,
+  webDir: findWebDir(env('HOMESTEAD_WEB_DIR')),
   scheduler: {
     enabled: bool(env('SCHEDULER_ENABLED'), true),
     tickSeconds: int(env('SCHEDULER_TICK_SECONDS'), 60),

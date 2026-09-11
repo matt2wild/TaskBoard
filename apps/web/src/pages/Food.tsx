@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { formatCo2e } from '@homestead/shared';
 import { api } from '../lib/api';
 import { useDebounced, useQuery } from '../lib/hooks';
 import { useApp } from '../App';
@@ -471,8 +472,13 @@ function Waste() {
   }
   return (
     <div className="space-y-4">
-      <StatTile label="Wasted in the last 6 months" value={money(data.totalCost, app.currency)}
-                sub={`${data.items.length} items`} icon="trash" tone="warn" />
+      <div className="grid sm:grid-cols-2 gap-3">
+        <StatTile label="Wasted in the last 6 months" value={money(data.totalCost, app.currency)}
+                  sub={`${data.items.length} items`} icon="trash" tone="warn" />
+        {/* Food thrown out carries its whole footprint for nothing (GHG-011). */}
+        <StatTile label="Carbon thrown out with it" value={formatCo2e(data.totalGCo2e)}
+                  sub="grown, shipped and chilled for the bin" icon="leaf" tone="warn" />
+      </div>
       <Panel title="Most wasted" dense>
         <table className="table">
           <thead><tr><th>Product</th><th className="text-right">Times</th><th className="text-right">Cost</th></tr></thead>

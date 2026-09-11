@@ -14,6 +14,7 @@ import { Maintenance } from './pages/Maintenance';
 import { Assets, AssetDetail } from './pages/Assets';
 import { Projects, ProjectDetail } from './pages/Projects';
 import { Budget } from './pages/Budget';
+import { Carbon } from './pages/Carbon';
 import { Food } from './pages/Food';
 import { Storage } from './pages/Storage';
 import { Tools } from './pages/Tools';
@@ -112,6 +113,7 @@ export function App() {
               <Route path="/projects" element={<Projects />} />
               <Route path="/projects/:id" element={<ProjectDetail />} />
               <Route path="/budget/*" element={<Budget />} />
+              <Route path="/carbon" element={<Carbon />} />
               <Route path="/food/*" element={<Food />} />
               <Route path="/storage/*" element={<Storage />} />
               <Route path="/tools/*" element={<Tools />} />

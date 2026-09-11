@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { formatCo2e } from '@homestead/shared';
 import { api } from '../lib/api';
 import { useQuery } from '../lib/hooks';
 import { useApp } from '../App';
@@ -180,7 +181,7 @@ export function PetDetail() {
         </div>
       </header>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <StatTile label="Weight" value={data.weight.latest != null ? `${data.weight.latest} ${data.weight.unit}` : '—'}
                   sub={data.weight.changePct != null ? `${data.weight.changePct > 0 ? '+' : ''}${data.weight.changePct}% in a month` : undefined}
                   tone={data.weight.warn ? 'bad' : 'default'} icon="chart" />
@@ -193,6 +194,8 @@ export function PetDetail() {
                   sub={data.conditions[0]?.name} icon="heart" />
         <StatTile label="Lifetime cost" value={money(data.spend.total, app.currency)}
                   sub={`${data.spend.count} transactions`} icon="coin" />
+        <StatTile label="Footprint" value={formatCo2e(data.carbon.total)} icon="leaf"
+                  sub="mostly what is in the bowl" />
       </div>
 
       {data.weight.warn && (
@@ -343,10 +346,15 @@ export function PetDetail() {
 
       {tab === 'costs' && (
         <div className="space-y-4">
-          <StatTile label={`What ${pet.name} has cost`} value={money(data.spend.total, app.currency)}
-                    sub={`across ${data.spend.count} transactions`} icon="coin" />
+          <div className="grid sm:grid-cols-2 gap-3">
+            <StatTile label={`What ${pet.name} has cost`} value={money(data.spend.total, app.currency)}
+                      sub={`across ${data.spend.count} transactions`} icon="coin" />
+            <StatTile label={`What ${pet.name} has emitted`} value={formatCo2e(data.carbon.total)}
+                      sub={`across ${data.carbon.count} activities`} icon="leaf" />
+          </div>
           <p className="text-sm dim">
-            Every vet visit, medication, food purchase and supply attributed to {pet.name} rolls up here.
+            Every vet visit, medication, food purchase and supply attributed to {pet.name} rolls up here,
+            in money and in carbon. Both come from the same ledger, so neither can drift from the other.
           </p>
         </div>
       )}

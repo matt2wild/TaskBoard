@@ -6,6 +6,7 @@ import { useApp } from '../App';
 import { dateLabel, money, pluralise, quantity } from '../lib/format';
 import { Icon } from '../components/Icon';
 import { DueChip, EmptyState, ErrorNote, Panel, Progress, Spinner, StatTile, useToast } from '../components/ui';
+import { CarbonTile } from './Carbon';
 
 /** The one screen that answers "what needs me today?" (DASH-001). */
 export function Today() {
@@ -65,7 +66,7 @@ export function Today() {
         </div>
       </header>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <StatTile label="Due today" value={c.tasksDueToday} icon="check"
                   sub={c.tasksOverdue ? `${c.tasksOverdue} overdue` : 'Nothing late'}
                   tone={c.tasksOverdue ? 'bad' : 'default'} />
@@ -77,6 +78,7 @@ export function Today() {
         <StatTile label="Pet doses" value={c.dosesDueToday} icon="paw"
                   sub={c.dosesMissed ? `${c.dosesMissed} missed` : 'On schedule'}
                   tone={c.dosesMissed ? 'bad' : 'default'} />
+        <CarbonTile carbon={data.carbon} />
       </div>
 
       <div className="grid lg:grid-cols-3 gap-5 items-start">

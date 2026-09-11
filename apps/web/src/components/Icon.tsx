@@ -48,6 +48,7 @@ const PATHS: Record<string, string> = {
   camera: 'M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
   undo: 'M3 7v6h6M3.5 13a9 9 0 1 0 2.1-5.6L3 10',
   external: 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3',
+  leaf: 'M4 20c0-8 5-13 16-13 0 9-5 13-11 13H4zM4 20c2-5 5-8 9-10',
 };
 
 export type IconName = keyof typeof PATHS | string;
